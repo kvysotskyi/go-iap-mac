@@ -1,0 +1,53 @@
+# Build outputs
+build/bin/
+go-iap
+
+# Frontend dependencies
+frontend/node_modules/
+
+# Frontend build output
+frontend/dist/
+
+# Wails generated files
+frontend/wailsjs/
+
+# Package manager lock file hash
+frontend/package.json.md5
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
