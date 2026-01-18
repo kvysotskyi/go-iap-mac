@@ -64,25 +64,48 @@ jobs:
           mkdir -p dmg-contents
           cp -R "build/bin/${APP_NAME}.app" dmg-contents/
           
-          # Add a README for users about Gatekeeper
-          cat > dmg-contents/README.txt << 'EOF'
-          IAP Tunnel Manager
-          ==================
+          # Create symlink to Applications folder
+          ln -s /Applications dmg-contents/Applications
           
-          If macOS shows "damaged and can't be opened" error:
-          
-          1. Open Terminal
-          2. Run: xattr -cr "/Applications/IAP Tunnel Manager.app"
-          3. Try opening the app again
-          
-          This happens because the app is not signed with an Apple Developer certificate.
-          EOF
-          
-          # Create DMG
+          # Create a temporary DMG (read-write)
           hdiutil create -volname "${APP_NAME}" \
             -srcfolder dmg-contents \
-            -ov -format UDZO \
-            "${DMG_NAME}.dmg"
+            -ov -format UDRW \
+            -size 200m \
+            "temp.dmg"
+          
+          # Mount the DMG
+          hdiutil attach "temp.dmg" -mountpoint /Volumes/"${APP_NAME}"
+          
+          # Set custom icon positions using AppleScript
+          osascript << APPLESCRIPT
+          tell application "Finder"
+            tell disk "${APP_NAME}"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set bounds of container window to {400, 100, 920, 440}
+              set viewOptions to the icon view options of container window
+              set arrangement of viewOptions to not arranged
+              set icon size of viewOptions to 80
+              set position of item "${APP_NAME}.app" of container window to {130, 150}
+              set position of item "Applications" of container window to {390, 150}
+              close
+              open
+              update without registering applications
+              delay 2
+            end tell
+          end tell
+          APPLESCRIPT
+          
+          # Unmount
+          sync
+          hdiutil detach /Volumes/"${APP_NAME}"
+          
+          # Convert to compressed read-only DMG
+          hdiutil convert "temp.dmg" -format UDZO -o "${DMG_NAME}.dmg"
+          rm -f temp.dmg
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -142,26 +165,48 @@ jobs:
           mkdir -p dmg-contents
           cp -R "${APP_NAME}.app" dmg-contents/
           
-          # Add README
-          cat > dmg-contents/README.txt << 'EOF'
-          IAP Tunnel Manager (Universal Binary)
-          =====================================
+          # Create symlink to Applications folder
+          ln -s /Applications dmg-contents/Applications
           
-          This version works on both Apple Silicon (M1/M2/M3) and Intel Macs.
-          
-          If macOS shows "damaged and can't be opened" error:
-          
-          1. Open Terminal
-          2. Run: xattr -cr "/Applications/IAP Tunnel Manager.app"
-          3. Try opening the app again
-          
-          This happens because the app is not signed with an Apple Developer certificate.
-          EOF
-          
+          # Create a temporary DMG (read-write)
           hdiutil create -volname "${APP_NAME}" \
             -srcfolder dmg-contents \
-            -ov -format UDZO \
-            "${DMG_NAME}.dmg"
+            -ov -format UDRW \
+            -size 200m \
+            "temp.dmg"
+          
+          # Mount the DMG
+          hdiutil attach "temp.dmg" -mountpoint /Volumes/"${APP_NAME}"
+          
+          # Set custom icon positions using AppleScript
+          osascript << APPLESCRIPT
+          tell application "Finder"
+            tell disk "${APP_NAME}"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set bounds of container window to {400, 100, 920, 440}
+              set viewOptions to the icon view options of container window
+              set arrangement of viewOptions to not arranged
+              set icon size of viewOptions to 80
+              set position of item "${APP_NAME}.app" of container window to {130, 150}
+              set position of item "Applications" of container window to {390, 150}
+              close
+              open
+              update without registering applications
+              delay 2
+            end tell
+          end tell
+          APPLESCRIPT
+          
+          # Unmount
+          sync
+          hdiutil detach /Volumes/"${APP_NAME}"
+          
+          # Convert to compressed read-only DMG
+          hdiutil convert "temp.dmg" -format UDZO -o "${DMG_NAME}.dmg"
+          rm -f temp.dmg
 
       - name: Upload Universal App
         uses: actions/upload-artifact@v4
