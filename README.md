@@ -85,7 +85,11 @@ Download the latest release from the [Releases](https://github.com/kvysotskyi/go
 
 ### Configure IAP in your project
 
-#### 1. Authenticate with Google Cloud
+#### 1. Install Google Cloud CLI
+
+Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) for your platform. This is required for authentication.
+
+#### 2. Authenticate with Google Cloud
 
 This app uses Application Default Credentials (ADC). Authenticate with:
 
@@ -93,7 +97,7 @@ This app uses Application Default Credentials (ADC). Authenticate with:
 gcloud auth application-default login
 ```
 
-#### 2. Required IAM Permissions
+#### 3. Required IAM Permissions
 
 Your Google account needs the following permissions:
 
@@ -103,7 +107,7 @@ Your Google account needs the following permissions:
 | `roles/compute.viewer` | List VM instances |
 | `roles/iap.tunnelResourceAccessor` | Create IAP tunnels |
 
-#### 3. Configure Firewall Rules
+#### 4. Configure Firewall Rules
 
 Ensure your VPC has a firewall rule allowing IAP traffic:
 

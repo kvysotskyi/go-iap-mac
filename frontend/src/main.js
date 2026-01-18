@@ -27,6 +27,8 @@ const elements = {
     authBtn: document.getElementById('auth-btn'),
     authBtnText: document.querySelector('.auth-btn-text'),
     authBtnSpinner: document.querySelector('.auth-btn-spinner'),
+    installGcloudBtn: document.getElementById('install-gcloud-btn'),
+    checkGcloudBtn: document.getElementById('check-gcloud-btn'),
     // Windows App
     windowsAppBanner: document.getElementById('windows-app-status'),
     windowsAppMessage: document.querySelector('.warning-message'),
@@ -131,6 +133,15 @@ async function init() {
 
 async function checkAuth() {
     try {
+        // First check if gcloud is installed
+        const gcloudInfo = await window.go.main.App.FindGcloud();
+        if (!gcloudInfo.found) {
+            showGcloudMissing();
+            elements.connectionStatus.classList.add('disconnected');
+            return false;
+        }
+        
+        // Then check authentication
         const result = await window.go.main.App.CheckAuth();
         if (!result.authenticated) {
             showAuthError(result.error);
@@ -148,37 +159,47 @@ async function checkAuth() {
     }
 }
 
+function showGcloudMissing() {
+    elements.authBanner.classList.remove('hidden');
+    elements.authBanner.classList.remove('authenticating');
+    elements.authMessage.textContent = 'Google Cloud CLI (gcloud) not found. Please install it to continue.';
+    
+    // Show install and check buttons, hide auth button
+    elements.installGcloudBtn.classList.remove('hidden');
+    elements.checkGcloudBtn.classList.remove('hidden');
+    elements.authBtn.classList.add('hidden');
+}
+
 function showAuthError(message) {
     elements.authBanner.classList.remove('hidden');
     elements.authBanner.classList.remove('authenticating');
     elements.authMessage.textContent = message;
+    
+    // Show auth button, hide install buttons
+    elements.installGcloudBtn.classList.add('hidden');
+    elements.checkGcloudBtn.classList.add('hidden');
+    elements.authBtn.classList.remove('hidden');
     resetAuthButton();
 }
 
 function hideAuthError() {
     elements.authBanner.classList.add('hidden');
     elements.authBanner.classList.remove('authenticating');
+    
+    // Hide all buttons
+    elements.installGcloudBtn.classList.add('hidden');
+    elements.checkGcloudBtn.classList.add('hidden');
+    elements.authBtn.classList.add('hidden');
     resetAuthButton();
 }
 
 function resetAuthButton() {
     elements.authBtn.disabled = false;
-    elements.authBtnText.textContent = 'Authenticate (ADC)';
+    elements.authBtnText.textContent = 'Authenticate';
     elements.authBtnSpinner.classList.add('hidden');
 }
 
 async function runAuthentication() {
-    try {
-        const gcloudInfo = await window.go.main.App.FindGcloud();
-        if (!gcloudInfo.found) {
-            showAuthError(gcloudInfo.error);
-            return;
-        }
-    } catch (error) {
-        showAuthError('Failed to find gcloud: ' + error.message);
-        return;
-    }
-    
     elements.authBtn.disabled = true;
     elements.authBtnText.textContent = 'Authenticating...';
     elements.authBtnSpinner.classList.remove('hidden');
@@ -196,6 +217,36 @@ async function runAuthentication() {
         }
     } catch (error) {
         showAuthError('Authentication error: ' + error.message);
+    }
+}
+
+async function openGcloudInstallPage() {
+    try {
+        await window.go.main.App.OpenGcloudInstallPage();
+        showToast('Opening Google Cloud SDK installation page...', 'info');
+    } catch (error) {
+        showToast('Failed to open browser: ' + error.message, 'error');
+    }
+}
+
+async function recheckGcloud() {
+    elements.checkGcloudBtn.disabled = true;
+    elements.checkGcloudBtn.textContent = 'Checking...';
+    
+    try {
+        const gcloudInfo = await window.go.main.App.FindGcloud();
+        if (gcloudInfo.found) {
+            showToast('Google Cloud CLI found!', 'success');
+            // Now check auth status
+            await checkAuth();
+        } else {
+            showToast('Google Cloud CLI still not found', 'error');
+        }
+    } catch (error) {
+        showToast('Failed to check: ' + error.message, 'error');
+    } finally {
+        elements.checkGcloudBtn.disabled = false;
+        elements.checkGcloudBtn.textContent = 'Check Again';
     }
 }
 
@@ -1155,6 +1206,8 @@ function startStatusPolling() {
 function setupEventListeners() {
     // Auth
     elements.authBtn.addEventListener('click', runAuthentication);
+    elements.installGcloudBtn.addEventListener('click', openGcloudInstallPage);
+    elements.checkGcloudBtn.addEventListener('click', recheckGcloud);
     
     // Top bar
     elements.openWindowsAppBtn.addEventListener('click', openWindowsApp);

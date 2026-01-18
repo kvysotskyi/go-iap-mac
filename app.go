@@ -174,10 +174,10 @@ type BookmarkResult struct {
 
 // WindowsPasswordRequest represents a request to generate/rotate Windows password
 type WindowsPasswordRequest struct {
-	ConnectionID     string `json:"connectionId"`
-	Username         string `json:"username"`
-	SaveToKeychain   bool   `json:"saveToKeychain"`
-	UpdateBookmark   bool   `json:"updateBookmark"`
+	ConnectionID   string `json:"connectionId"`
+	Username       string `json:"username"`
+	SaveToKeychain bool   `json:"saveToKeychain"`
+	UpdateBookmark bool   `json:"updateBookmark"`
 }
 
 // WindowsPasswordResult represents the result of password generation
@@ -200,18 +200,18 @@ type windowsKeyMetadata struct {
 
 // windowsPasswordResponse represents the response from the Windows guest agent
 type windowsPasswordResponse struct {
-	Modulus             string `json:"modulus"`
-	UserName            string `json:"userName"`
-	PasswordFound       bool   `json:"passwordFound"`
-	EncryptedPassword   string `json:"encryptedPassword"`
-	ErrorMessage        string `json:"errorMessage,omitempty"`
+	Modulus           string `json:"modulus"`
+	UserName          string `json:"userName"`
+	PasswordFound     bool   `json:"passwordFound"`
+	EncryptedPassword string `json:"encryptedPassword"`
+	ErrorMessage      string `json:"errorMessage,omitempty"`
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
 	app := &App{
-		tunnels:          make(map[string]*Tunnel),
-		config:           &AppConfig{Favorites: []Favorite{}},
+		tunnels: make(map[string]*Tunnel),
+		config:  &AppConfig{Favorites: []Favorite{}},
 	}
 	app.initConfigPath()
 	return app
@@ -361,7 +361,6 @@ func (a *App) stopTunnelInternal(tunnel *Tunnel) {
 	}
 	tunnel.Status = "stopped"
 }
-
 
 // GetLastConnection returns the last used connection settings
 func (a *App) GetLastConnection() *LastConnection {
@@ -683,6 +682,11 @@ func (a *App) verifyGcloud(path string) GcloudInfo {
 		Path:    path,
 		Version: version,
 	}
+}
+
+// OpenGcloudInstallPage opens the Google Cloud SDK installation page in the browser
+func (a *App) OpenGcloudInstallPage() error {
+	return exec.Command("open", "https://cloud.google.com/sdk/docs/install").Run()
 }
 
 // RunADCLogin runs gcloud auth application-default login
@@ -1807,7 +1811,7 @@ func (a *App) saveToKeychain(service, account, password string) error {
 // GetPasswordFromKeychain retrieves a password from the macOS Keychain
 func (a *App) GetPasswordFromKeychain(projectID, zone, instance, username string) (string, error) {
 	account := fmt.Sprintf("%s/%s/%s/%s", projectID, zone, instance, username)
-	
+
 	cmd := exec.Command("security", "find-generic-password",
 		"-s", KeychainService,
 		"-a", account,
@@ -1824,7 +1828,7 @@ func (a *App) GetPasswordFromKeychain(projectID, zone, instance, username string
 // DeletePasswordFromKeychain removes a password from the macOS Keychain
 func (a *App) DeletePasswordFromKeychain(projectID, zone, instance, username string) error {
 	account := fmt.Sprintf("%s/%s/%s/%s", projectID, zone, instance, username)
-	
+
 	cmd := exec.Command("security", "delete-generic-password",
 		"-s", KeychainService,
 		"-a", account,
