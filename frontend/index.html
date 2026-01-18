@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAP Tunnel Manager</title>
+    <link rel="stylesheet" href="/src/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <!-- macOS Title Bar Drag Region -->
+    <div class="titlebar-drag-region"></div>
+    
+    <div id="app">
+        <!-- Banners Section (below title bar) -->
+        <div class="banners-section">
+            <!-- Auth Check -->
+            <div id="auth-status" class="auth-banner hidden">
+                <div class="auth-content">
+                    <span class="auth-icon">⚠️</span>
+                    <span class="auth-message"></span>
+                </div>
+                <div class="auth-actions">
+                    <button id="auth-btn" class="btn btn-auth">
+                        <span class="auth-btn-text">Authenticate (ADC)</span>
+                        <span class="auth-btn-spinner hidden"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Windows App Warning -->
+            <div id="windows-app-status" class="warning-banner hidden">
+                <span class="warning-icon">ℹ️</span>
+                <span class="warning-message">Windows App not found. Install it from the Mac App Store to enable RDP bookmark integration.</span>
+            </div>
+        </div>
+
+        <!-- Main Container -->
+        <div class="container">
+            <!-- Header -->
+            <header class="header">
+                <h1>IAP Tunnel Manager</h1>
+                <div class="header-status">
+                    <span id="connection-status" class="status-indicator"></span>
+                </div>
+            </header>
+
+            <!-- Favorites Section -->
+            <section class="favorites-section" id="favorites-section">
+                <div class="favorites-header">
+                    <h3>Favorites</h3>
+                </div>
+                <div id="favorites-list" class="favorites-list">
+                    <div class="favorites-empty">No favorites yet. Star a VM to add it here.</div>
+                </div>
+            </section>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Left Panel: Projects -->
+                <section class="panel projects-panel">
+                    <div class="panel-header">
+                        <h2>Projects</h2>
+                        <input 
+                            type="search" 
+                            id="project-search" 
+                            placeholder="Search projects..."
+                            class="search-input"
+                            autocomplete="off"
+                        >
+                    </div>
+                    <div class="panel-content">
+                        <div id="projects-list" class="list-container">
+                            <div class="loading">Loading projects...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Right Panel: VMs -->
+                <section class="panel vms-panel">
+                    <div class="panel-header">
+                        <h2>Virtual Machines</h2>
+                        <div class="vm-header-actions">
+                            <input 
+                                type="search" 
+                                id="vm-search" 
+                                placeholder="Search VMs..."
+                                class="search-input"
+                                autocomplete="off"
+                                disabled
+                            >
+                            <button id="toggle-favorite-btn" class="btn btn-icon" disabled title="Add to favorites">
+                                <span class="star-icon">☆</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div id="vms-list" class="list-container">
+                            <div class="placeholder">Select a project to view VMs</div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <!-- Tunnel Control Panel -->
+            <section class="tunnel-panel">
+                <!-- Selection Info & Actions -->
+                <div class="tunnel-info">
+                    <div class="tunnel-details">
+                        <div class="detail-row">
+                            <span class="label">Project:</span>
+                            <span id="selected-project" class="value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">VM:</span>
+                            <span id="selected-vm" class="value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="label">Zone:</span>
+                            <span id="selected-zone" class="value">-</span>
+                        </div>
+                    </div>
+                    <div class="tunnel-actions">
+                        <button id="start-tunnel-btn" class="btn btn-primary" disabled>
+                            Start Tunnel
+                        </button>
+                        <button id="start-tunnel-bookmark-btn" class="btn btn-primary" disabled title="Start tunnel and create Windows App bookmark">
+                            Start + Bookmark
+                        </button>
+                        <button id="open-windows-app-btn" class="btn btn-secondary" disabled title="Open Windows App">
+                            Open Windows App
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Tunnels List -->
+                <div class="tunnels-list-panel">
+                    <div class="tunnels-list-header">
+                        <h3>Active Tunnels</h3>
+                        <div class="tunnels-list-actions">
+                            <button id="stop-all-btn" class="btn btn-small btn-danger-outline" title="Stop all running tunnels">Stop All</button>
+                            <button id="clear-stopped-btn" class="btn btn-small" title="Remove stopped tunnels">Clear Stopped</button>
+                        </div>
+                    </div>
+                    <div id="tunnels-list" class="tunnels-list">
+                        <div class="tunnels-empty">No active tunnels</div>
+                    </div>
+                </div>
+
+                <!-- Selected Tunnel Actions -->
+                <div class="selected-tunnel-panel" id="selected-tunnel-panel" style="display: none;">
+                    <div class="selected-tunnel-info">
+                        <div class="selected-tunnel-details">
+                            <span class="tunnel-vm-name" id="tunnel-vm-name">-</span>
+                            <span class="tunnel-address" id="tunnel-address">-</span>
+                            <span class="tunnel-status-badge" id="tunnel-status">-</span>
+                        </div>
+                        <div class="selected-tunnel-actions">
+                            <button id="stop-tunnel-btn" class="btn btn-danger btn-small" disabled>
+                                Stop
+                            </button>
+                            <button id="copy-address-btn" class="btn btn-secondary btn-small" disabled>
+                                Copy Address
+                            </button>
+                            <button id="remove-tunnel-btn" class="btn btn-secondary btn-small" disabled title="Remove from list">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logs Panel -->
+                <div class="logs-panel">
+                    <div class="logs-header">
+                        <h3>Tunnel Logs</h3>
+                        <button id="clear-logs-btn" class="btn btn-small">Clear</button>
+                    </div>
+                    <div id="logs-container" class="logs-container">
+                        <div class="log-placeholder">Select a tunnel to view logs...</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
