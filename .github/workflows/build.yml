@@ -1,0 +1,166 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        platform:
+          - arch: arm64
+            name: Apple Silicon
+          - arch: amd64
+            name: Intel
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Build for ${{ matrix.platform.name }}
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.platform.arch }}
+          CGO_ENABLED: 1
+        run: |
+          wails build -platform darwin/${{ matrix.platform.arch }}
+
+      - name: Create DMG
+        run: |
+          APP_NAME="IAP Tunnel Manager"
+          DMG_NAME="IAP-Tunnel-Manager-macOS-${{ matrix.platform.arch }}"
+          
+          # Create a temporary directory for DMG contents
+          mkdir -p dmg-contents
+          cp -R "build/bin/${APP_NAME}.app" dmg-contents/
+          
+          # Create DMG
+          hdiutil create -volname "${APP_NAME}" \
+            -srcfolder dmg-contents \
+            -ov -format UDZO \
+            "${DMG_NAME}.dmg"
+
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: IAP-Tunnel-Manager-macOS-${{ matrix.platform.arch }}-app
+          path: build/bin/*.app
+          retention-days: 30
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: IAP-Tunnel-Manager-macOS-${{ matrix.platform.arch }}-dmg
+          path: "*.dmg"
+          retention-days: 30
+
+  # Create a universal binary (optional)
+  universal:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - name: Download ARM64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: IAP-Tunnel-Manager-macOS-arm64-app
+          path: arm64
+
+      - name: Download AMD64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: IAP-Tunnel-Manager-macOS-amd64-app
+          path: amd64
+
+      - name: Create Universal Binary
+        run: |
+          APP_NAME="IAP Tunnel Manager"
+          
+          # Copy ARM64 app as base
+          cp -R "arm64/${APP_NAME}.app" "${APP_NAME}.app"
+          
+          # Create universal binary using lipo
+          lipo -create \
+            "arm64/${APP_NAME}.app/Contents/MacOS/${APP_NAME}" \
+            "amd64/${APP_NAME}.app/Contents/MacOS/${APP_NAME}" \
+            -output "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+          
+          # Verify universal binary
+          file "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+
+      - name: Create Universal DMG
+        run: |
+          APP_NAME="IAP Tunnel Manager"
+          DMG_NAME="IAP-Tunnel-Manager-macOS-universal"
+          
+          mkdir -p dmg-contents
+          cp -R "${APP_NAME}.app" dmg-contents/
+          
+          hdiutil create -volname "${APP_NAME}" \
+            -srcfolder dmg-contents \
+            -ov -format UDZO \
+            "${DMG_NAME}.dmg"
+
+      - name: Upload Universal App
+        uses: actions/upload-artifact@v4
+        with:
+          name: IAP-Tunnel-Manager-macOS-universal-app
+          path: "*.app"
+          retention-days: 30
+
+      - name: Upload Universal DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: IAP-Tunnel-Manager-macOS-universal-dmg
+          path: "*.dmg"
+          retention-days: 30
+
+  # Release job (only on tags)
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, universal]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/*.dmg
+          draft: true
+          generate_release_notes: true
