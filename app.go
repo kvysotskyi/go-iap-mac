@@ -2,15 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -35,19 +41,19 @@ const (
 	AppName = "IAP Tunnel Manager"
 	// ConfigFileName is the name of the config file
 	ConfigFileName = "config.json"
+	// KeychainService is the service name for Keychain storage
+	KeychainService = "IAP Tunnel Manager"
 )
 
 // App struct
 type App struct {
-	ctx              context.Context
-	tokenSource      oauth2.TokenSource
-	tunnels          map[string]*Tunnel
-	tunnelsMu        sync.RWMutex
-	managedBookmarks map[string]bool // Track bookmark IDs created by this app
-	bookmarksMu      sync.RWMutex
-	config           *AppConfig
-	configMu         sync.RWMutex
-	configPath       string
+	ctx         context.Context
+	tokenSource oauth2.TokenSource
+	tunnels     map[string]*Tunnel
+	tunnelsMu   sync.RWMutex
+	config      *AppConfig
+	configMu    sync.RWMutex
+	configPath  string
 }
 
 // AppConfig represents the persisted application configuration
@@ -68,15 +74,19 @@ type LastConnection struct {
 
 // Favorite represents a saved favorite connection
 type Favorite struct {
-	ID                 string `json:"id"` // Stable UUID for bookmark mapping
-	DisplayName        string `json:"displayName"`
-	ProjectID          string `json:"projectId"`
-	ProjectName        string `json:"projectName,omitempty"`
-	InstanceName       string `json:"instanceName"`
-	Zone               string `json:"zone"`
-	RemotePort         int    `json:"remotePort"`
-	PreferredLocalPort int    `json:"preferredLocalPort,omitempty"`
-	CreatedAt          string `json:"createdAt"`
+	ID           string `json:"id"` // Stable UUID for bookmark mapping
+	DisplayName  string `json:"displayName"`
+	ProjectID    string `json:"projectId"`
+	ProjectName  string `json:"projectName,omitempty"`
+	InstanceName string `json:"instanceName"`
+	Zone         string `json:"zone"`
+	RemotePort   int    `json:"remotePort"`
+	LocalPort    int    `json:"localPort"` // Fixed local port for this connection
+	CreatedAt    string `json:"createdAt"`
+	// Windows credentials
+	Username         string `json:"username,omitempty"`
+	HasBookmark      bool   `json:"hasBookmark"`
+	BookmarkHasCreds bool   `json:"bookmarkHasCreds"` // true if bookmark was created with username/password
 }
 
 // Project represents a GCP project
@@ -87,10 +97,12 @@ type Project struct {
 
 // VM represents a Compute Engine VM instance
 type VM struct {
-	Name      string `json:"name"`
-	Zone      string `json:"zone"`
-	Status    string `json:"status"`
-	PrivateIP string `json:"privateIp"`
+	Name        string `json:"name"`
+	Zone        string `json:"zone"`
+	Status      string `json:"status"`
+	PrivateIP   string `json:"privateIp"`
+	MachineType string `json:"machineType"`
+	IsWindows   bool   `json:"isWindows"`
 }
 
 // Tunnel represents an active IAP tunnel
@@ -160,11 +172,45 @@ type BookmarkResult struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// WindowsPasswordRequest represents a request to generate/rotate Windows password
+type WindowsPasswordRequest struct {
+	ConnectionID     string `json:"connectionId"`
+	Username         string `json:"username"`
+	SaveToKeychain   bool   `json:"saveToKeychain"`
+	UpdateBookmark   bool   `json:"updateBookmark"`
+}
+
+// WindowsPasswordResult represents the result of password generation
+type WindowsPasswordResult struct {
+	Success         bool   `json:"success"`
+	Username        string `json:"username,omitempty"`
+	Password        string `json:"password,omitempty"`
+	Error           string `json:"error,omitempty"`
+	BookmarkUpdated bool   `json:"bookmarkUpdated"`
+	KeychainSaved   bool   `json:"keychainSaved"`
+}
+
+// windowsKeyMetadata represents the metadata structure for Windows password reset
+type windowsKeyMetadata struct {
+	ExpireOn string `json:"expireOn"`
+	Exponent string `json:"exponent"`
+	Modulus  string `json:"modulus"`
+	UserName string `json:"userName"`
+}
+
+// windowsPasswordResponse represents the response from the Windows guest agent
+type windowsPasswordResponse struct {
+	Modulus             string `json:"modulus"`
+	UserName            string `json:"userName"`
+	PasswordFound       bool   `json:"passwordFound"`
+	EncryptedPassword   string `json:"encryptedPassword"`
+	ErrorMessage        string `json:"errorMessage,omitempty"`
+}
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	app := &App{
 		tunnels:          make(map[string]*Tunnel),
-		managedBookmarks: make(map[string]bool),
 		config:           &AppConfig{Favorites: []Favorite{}},
 	}
 	app.initConfigPath()
@@ -303,9 +349,6 @@ func (a *App) shutdown(ctx context.Context) {
 		}
 		a.tunnelsMu.Unlock()
 	}
-
-	// Delete all managed bookmarks (if Windows App is available)
-	a.cleanupManagedBookmarks()
 }
 
 // stopTunnelInternal stops a tunnel without locking (caller must handle locking)
@@ -319,68 +362,6 @@ func (a *App) stopTunnelInternal(tunnel *Tunnel) {
 	tunnel.Status = "stopped"
 }
 
-// cleanupManagedBookmarks deletes all bookmarks created by this app
-func (a *App) cleanupManagedBookmarks() {
-	// Check if Windows App is installed
-	status := a.CheckWindowsApp()
-	if !status.Installed {
-		return // Skip bookmark cleanup if Windows App not available
-	}
-
-	// Get all managed bookmark IDs
-	a.bookmarksMu.RLock()
-	bookmarkIDs := make([]string, 0, len(a.managedBookmarks))
-	for id := range a.managedBookmarks {
-		bookmarkIDs = append(bookmarkIDs, id)
-	}
-	a.bookmarksMu.RUnlock()
-
-	// Delete each bookmark
-	for _, bookmarkID := range bookmarkIDs {
-		a.deleteBookmarkQuietly(bookmarkID)
-	}
-}
-
-// deleteBookmarkQuietly deletes a bookmark without returning errors (for cleanup)
-func (a *App) deleteBookmarkQuietly(bookmarkID string) {
-	cmd := exec.Command(WindowsAppCLI,
-		"--script", "bookmark", "delete", bookmarkID,
-	)
-	// Run with a short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	cmd = exec.CommandContext(ctx, WindowsAppCLI,
-		"--script", "bookmark", "delete", bookmarkID,
-	)
-	_ = cmd.Run() // Ignore errors during cleanup
-}
-
-// trackBookmark adds a bookmark ID to the managed bookmarks list
-func (a *App) trackBookmark(bookmarkID string) {
-	a.bookmarksMu.Lock()
-	defer a.bookmarksMu.Unlock()
-	a.managedBookmarks[bookmarkID] = true
-}
-
-// untrackBookmark removes a bookmark ID from the managed bookmarks list
-func (a *App) untrackBookmark(bookmarkID string) {
-	a.bookmarksMu.Lock()
-	defer a.bookmarksMu.Unlock()
-	delete(a.managedBookmarks, bookmarkID)
-}
-
-// GetManagedBookmarks returns the list of bookmark IDs managed by this app
-func (a *App) GetManagedBookmarks() []string {
-	a.bookmarksMu.RLock()
-	defer a.bookmarksMu.RUnlock()
-
-	bookmarks := make([]string, 0, len(a.managedBookmarks))
-	for id := range a.managedBookmarks {
-		bookmarks = append(bookmarks, id)
-	}
-	return bookmarks
-}
 
 // GetLastConnection returns the last used connection settings
 func (a *App) GetLastConnection() *LastConnection {
@@ -431,6 +412,12 @@ func (a *App) GetFavorites() []Favorite {
 
 // AddFavorite adds a new favorite connection
 func (a *App) AddFavorite(displayName, projectID, projectName, instanceName, zone string, remotePort, preferredLocalPort int) (*Favorite, error) {
+	// Get a free port first (before locking config)
+	localPort, err := a.GetFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate local port: %w", err)
+	}
+
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
 
@@ -441,7 +428,20 @@ func (a *App) AddFavorite(displayName, projectID, projectName, instanceName, zon
 	// Check if already exists (same project+instance+zone)
 	for _, f := range a.config.Favorites {
 		if f.ProjectID == projectID && f.InstanceName == instanceName && f.Zone == zone {
-			return nil, fmt.Errorf("favorite already exists for this VM")
+			return nil, fmt.Errorf("connection already exists for this VM")
+		}
+	}
+
+	// Check if port conflicts with existing connections
+	for _, f := range a.config.Favorites {
+		if f.LocalPort == localPort {
+			// Try to get another port
+			a.configMu.Unlock()
+			localPort, err = a.GetFreePort()
+			a.configMu.Lock()
+			if err != nil {
+				return nil, fmt.Errorf("failed to allocate local port: %w", err)
+			}
 		}
 	}
 
@@ -449,28 +449,28 @@ func (a *App) AddFavorite(displayName, projectID, projectName, instanceName, zon
 	favoriteID := a.GenerateBookmarkID(projectID, instanceName, zone)
 
 	favorite := Favorite{
-		ID:                 favoriteID,
-		DisplayName:        displayName,
-		ProjectID:          projectID,
-		ProjectName:        projectName,
-		InstanceName:       instanceName,
-		Zone:               zone,
-		RemotePort:         remotePort,
-		PreferredLocalPort: preferredLocalPort,
-		CreatedAt:          time.Now().Format(time.RFC3339),
+		ID:           favoriteID,
+		DisplayName:  displayName,
+		ProjectID:    projectID,
+		ProjectName:  projectName,
+		InstanceName: instanceName,
+		Zone:         zone,
+		RemotePort:   remotePort,
+		LocalPort:    localPort,
+		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
 
 	a.config.Favorites = append(a.config.Favorites, favorite)
 
 	// Save config (unlock first to avoid deadlock)
 	a.configMu.Unlock()
-	err := a.saveConfig()
+	err = a.saveConfig()
 	a.configMu.Lock()
 
 	if err != nil {
 		// Remove the favorite we just added
 		a.config.Favorites = a.config.Favorites[:len(a.config.Favorites)-1]
-		return nil, fmt.Errorf("failed to save favorite: %w", err)
+		return nil, fmt.Errorf("failed to save connection: %w", err)
 	}
 
 	return &favorite, nil
@@ -546,7 +546,7 @@ func (a *App) GetFavoriteByVM(projectID, instanceName, zone string) *Favorite {
 }
 
 // UpdateFavorite updates an existing favorite
-func (a *App) UpdateFavorite(favoriteID, displayName string, remotePort, preferredLocalPort int) error {
+func (a *App) UpdateFavorite(favoriteID, displayName string, remotePort int) error {
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
 
@@ -563,7 +563,6 @@ func (a *App) UpdateFavorite(favoriteID, displayName string, remotePort, preferr
 			if remotePort > 0 {
 				a.config.Favorites[i].RemotePort = remotePort
 			}
-			a.config.Favorites[i].PreferredLocalPort = preferredLocalPort
 			found = true
 			break
 		}
@@ -846,11 +845,34 @@ func (a *App) ListVMs(projectID, filter string) ([]VM, error) {
 					privateIP = instance.NetworkInterfaces[0].NetworkIP
 				}
 
+				// Extract machine type name from full URL
+				machineType := instance.MachineType
+				if idx := strings.LastIndex(machineType, "/"); idx != -1 {
+					machineType = machineType[idx+1:]
+				}
+
+				// Detect if Windows based on disks licenses or OS
+				isWindows := false
+				for _, disk := range instance.Disks {
+					for _, license := range disk.Licenses {
+						licenseLower := strings.ToLower(license)
+						if strings.Contains(licenseLower, "windows") {
+							isWindows = true
+							break
+						}
+					}
+					if isWindows {
+						break
+					}
+				}
+
 				vms = append(vms, VM{
-					Name:      instance.Name,
-					Zone:      zone,
-					Status:    instance.Status,
-					PrivateIP: privateIP,
+					Name:        instance.Name,
+					Zone:        zone,
+					Status:      instance.Status,
+					PrivateIP:   privateIP,
+					MachineType: machineType,
+					IsWindows:   isWindows,
 				})
 			}
 		}
@@ -917,6 +939,43 @@ func (a *App) GetUsedPorts() []int {
 // StartTunnel starts an IAP tunnel to the specified VM
 func (a *App) StartTunnel(projectID, vmName, zone string, localPort int) (*TunnelInfo, error) {
 	return a.StartTunnelWithRemotePort(projectID, vmName, zone, localPort, 3389)
+}
+
+// StartTunnelForConnection starts a tunnel using the connection's fixed port
+func (a *App) StartTunnelForConnection(connectionID string) (*TunnelInfo, error) {
+	// Find the connection
+	a.configMu.RLock()
+	var conn *Favorite
+	for i := range a.config.Favorites {
+		if a.config.Favorites[i].ID == connectionID {
+			conn = &a.config.Favorites[i]
+			break
+		}
+	}
+	a.configMu.RUnlock()
+
+	if conn == nil {
+		return nil, fmt.Errorf("connection not found")
+	}
+
+	if conn.LocalPort == 0 {
+		return nil, fmt.Errorf("connection has no assigned port")
+	}
+
+	// Check if port is already in use by another tunnel
+	if a.isPortInUse(conn.LocalPort) {
+		return nil, fmt.Errorf("port %d is already in use by another tunnel", conn.LocalPort)
+	}
+
+	// Check if port is available on the system
+	testListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", conn.LocalPort))
+	if err != nil {
+		return nil, fmt.Errorf("port %d is not available (may be used by another application)", conn.LocalPort)
+	}
+	testListener.Close()
+
+	// Start the tunnel with the connection's fixed port
+	return a.StartTunnelWithRemotePort(conn.ProjectID, conn.InstanceName, conn.Zone, conn.LocalPort, conn.RemotePort)
 }
 
 // StartTunnelWithRemotePort starts an IAP tunnel to the specified VM with a custom remote port
@@ -1265,9 +1324,6 @@ func (a *App) CreateWindowsAppBookmark(projectID, vmName, zone string, localPort
 		}
 	}
 
-	// Track this bookmark so we can clean it up on exit
-	a.trackBookmark(bookmarkID)
-
 	return BookmarkResult{
 		Success:    true,
 		BookmarkID: bookmarkID,
@@ -1298,9 +1354,6 @@ func (a *App) DeleteWindowsAppBookmark(bookmarkID string) BookmarkResult {
 			Error:      fmt.Sprintf("Failed to delete bookmark: %v - %s", err, string(output)),
 		}
 	}
-
-	// Remove from tracked bookmarks
-	a.untrackBookmark(bookmarkID)
 
 	return BookmarkResult{
 		Success:    true,
@@ -1370,33 +1423,6 @@ func (a *App) StopAllTunnels() int {
 	return count
 }
 
-// CleanupAllBookmarks deletes all bookmarks managed by this app
-func (a *App) CleanupAllBookmarks() int {
-	// Check if Windows App is installed
-	status := a.CheckWindowsApp()
-	if !status.Installed {
-		return 0
-	}
-
-	// Get all managed bookmark IDs
-	a.bookmarksMu.Lock()
-	bookmarkIDs := make([]string, 0, len(a.managedBookmarks))
-	for id := range a.managedBookmarks {
-		bookmarkIDs = append(bookmarkIDs, id)
-	}
-	a.bookmarksMu.Unlock()
-
-	// Delete each bookmark
-	count := 0
-	for _, bookmarkID := range bookmarkIDs {
-		result := a.DeleteWindowsAppBookmark(bookmarkID)
-		if result.Success {
-			count++
-		}
-	}
-	return count
-}
-
 // StopTunnelAndDeleteBookmark stops a tunnel and deletes its associated bookmark
 func (a *App) StopTunnelAndDeleteBookmark(tunnelID string) error {
 	a.tunnelsMu.Lock()
@@ -1451,4 +1477,410 @@ func (t *Tunnel) toInfo() *TunnelInfo {
 		Logs:       logs,
 		BookmarkID: t.BookmarkID,
 	}
+}
+
+// ==================== Windows Password Generation ====================
+
+// GenerateWindowsPassword generates or rotates the Windows password for a VM
+func (a *App) GenerateWindowsPassword(req WindowsPasswordRequest) WindowsPasswordResult {
+	// Find the connection
+	a.configMu.RLock()
+	var conn *Favorite
+	for i := range a.config.Favorites {
+		if a.config.Favorites[i].ID == req.ConnectionID {
+			conn = &a.config.Favorites[i]
+			break
+		}
+	}
+	a.configMu.RUnlock()
+
+	if conn == nil {
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   "Connection not found",
+		}
+	}
+
+	// Default username
+	username := req.Username
+	if username == "" {
+		username = "Administrator"
+	}
+
+	// Generate RSA keypair
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   fmt.Sprintf("Failed to generate RSA key: %v", err),
+		}
+	}
+
+	// Create compute service
+	computeService, err := compute.NewService(a.ctx, option.WithTokenSource(a.tokenSource))
+	if err != nil {
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   fmt.Sprintf("Failed to create compute service: %v", err),
+		}
+	}
+
+	// Extract zone name from full zone path if needed
+	zoneName := conn.Zone
+	if strings.Contains(zoneName, "/") {
+		parts := strings.Split(zoneName, "/")
+		zoneName = parts[len(parts)-1]
+	}
+
+	// Get current instance metadata
+	instance, err := computeService.Instances.Get(conn.ProjectID, zoneName, conn.InstanceName).Do()
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "forbidden") {
+			return WindowsPasswordResult{
+				Success: false,
+				Error:   "Permission denied. Ensure you have compute.instances.setMetadata permission.",
+			}
+		}
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   fmt.Sprintf("Failed to get instance: %v", err),
+		}
+	}
+
+	// Prepare the windows-keys metadata
+	expireTime := time.Now().Add(5 * time.Minute).UTC().Format(time.RFC3339)
+	modulus := base64.StdEncoding.EncodeToString(privateKey.PublicKey.N.Bytes())
+	exponent := base64.StdEncoding.EncodeToString(big.NewInt(int64(privateKey.PublicKey.E)).Bytes())
+
+	keyMeta := windowsKeyMetadata{
+		ExpireOn: expireTime,
+		Exponent: exponent,
+		Modulus:  modulus,
+		UserName: username,
+	}
+
+	keyMetaJSON, err := json.Marshal(keyMeta)
+	if err != nil {
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   fmt.Sprintf("Failed to marshal key metadata: %v", err),
+		}
+	}
+
+	// Update instance metadata
+	metadata := instance.Metadata
+	if metadata == nil {
+		metadata = &compute.Metadata{}
+	}
+
+	// Find or create windows-keys item
+	found := false
+	for i, item := range metadata.Items {
+		if item.Key == "windows-keys" {
+			metadata.Items[i].Value = stringPtr(string(keyMetaJSON))
+			found = true
+			break
+		}
+	}
+	if !found {
+		metadata.Items = append(metadata.Items, &compute.MetadataItems{
+			Key:   "windows-keys",
+			Value: stringPtr(string(keyMetaJSON)),
+		})
+	}
+
+	// Set metadata
+	_, err = computeService.Instances.SetMetadata(conn.ProjectID, zoneName, conn.InstanceName, metadata).Do()
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "forbidden") {
+			return WindowsPasswordResult{
+				Success: false,
+				Error:   "Permission denied. Ensure you have compute.instances.setMetadata permission.",
+			}
+		}
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   fmt.Sprintf("Failed to set metadata: %v", err),
+		}
+	}
+
+	// Poll serial port output for the encrypted password
+	password, err := a.pollForWindowsPassword(computeService, conn.ProjectID, zoneName, conn.InstanceName, privateKey, modulus)
+	if err != nil {
+		return WindowsPasswordResult{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	result := WindowsPasswordResult{
+		Success:  true,
+		Username: username,
+		Password: password,
+	}
+
+	// Save username to connection config
+	a.configMu.Lock()
+	for i := range a.config.Favorites {
+		if a.config.Favorites[i].ID == req.ConnectionID {
+			a.config.Favorites[i].Username = username
+			break
+		}
+	}
+	a.configMu.Unlock()
+	a.saveConfig()
+
+	// Save to Keychain if requested
+	if req.SaveToKeychain {
+		keychainAccount := fmt.Sprintf("%s/%s/%s/%s", conn.ProjectID, zoneName, conn.InstanceName, username)
+		err := a.saveToKeychain(KeychainService, keychainAccount, password)
+		if err == nil {
+			result.KeychainSaved = true
+		}
+	}
+
+	// Update bookmark if requested and Windows App is installed
+	if req.UpdateBookmark {
+		status := a.CheckWindowsApp()
+		if status.Installed && conn.LocalPort > 0 {
+			// Use the connection's fixed port
+			bookmarkResult := a.createOrUpdateBookmarkWithCreds(conn, conn.LocalPort, username, password)
+			if bookmarkResult.Success {
+				result.BookmarkUpdated = true
+				// Update connection to reflect bookmark has credentials
+				a.configMu.Lock()
+				for i := range a.config.Favorites {
+					if a.config.Favorites[i].ID == req.ConnectionID {
+						a.config.Favorites[i].HasBookmark = true
+						a.config.Favorites[i].BookmarkHasCreds = true
+						break
+					}
+				}
+				a.configMu.Unlock()
+				a.saveConfig()
+			}
+		}
+	}
+
+	return result
+}
+
+// pollForWindowsPassword polls the serial port for the encrypted password response
+func (a *App) pollForWindowsPassword(svc *compute.Service, projectID, zone, instance string, privateKey *rsa.PrivateKey, expectedModulus string) (string, error) {
+	timeout := 90 * time.Second
+	interval := 2 * time.Second
+	maxInterval := 5 * time.Second
+	startTime := time.Now()
+
+	// Pattern to find JSON responses in serial output
+	jsonPattern := regexp.MustCompile(`\{[^{}]*"encryptedPassword"[^{}]*\}`)
+
+	for time.Since(startTime) < timeout {
+		// Get serial port output (port 4 is for Windows agent)
+		output, err := svc.Instances.GetSerialPortOutput(projectID, zone, instance).Port(4).Do()
+		if err != nil {
+			time.Sleep(interval)
+			continue
+		}
+
+		// Look for password response in serial output
+		matches := jsonPattern.FindAllString(output.Contents, -1)
+		for _, match := range matches {
+			var resp windowsPasswordResponse
+			if err := json.Unmarshal([]byte(match), &resp); err != nil {
+				continue
+			}
+
+			// Check if this response matches our request (same modulus)
+			if resp.Modulus == expectedModulus && resp.EncryptedPassword != "" {
+				// Decrypt the password
+				password, err := decryptWindowsPassword(resp.EncryptedPassword, privateKey)
+				if err != nil {
+					return "", fmt.Errorf("failed to decrypt password: %v", err)
+				}
+				return password, nil
+			}
+
+			// Check for error response
+			if resp.Modulus == expectedModulus && resp.ErrorMessage != "" {
+				return "", fmt.Errorf("guest agent error: %s", resp.ErrorMessage)
+			}
+		}
+
+		time.Sleep(interval)
+		// Backoff
+		if interval < maxInterval {
+			interval += time.Second
+		}
+	}
+
+	return "", fmt.Errorf("timeout waiting for Windows guest agent response. Ensure the VM is running and has the guest agent installed.")
+}
+
+// decryptWindowsPassword decrypts the password using the RSA private key
+func decryptWindowsPassword(encryptedBase64 string, privateKey *rsa.PrivateKey) (string, error) {
+	encrypted, err := base64.StdEncoding.DecodeString(encryptedBase64)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode encrypted password: %v", err)
+	}
+
+	// The Windows agent uses OAEP with SHA1
+	decrypted, err := rsa.DecryptOAEP(sha1.New(), rand.Reader, privateKey, encrypted, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt: %v", err)
+	}
+
+	return string(decrypted), nil
+}
+
+// getRunningTunnelPort returns the local port of a running tunnel for the given connection
+func (a *App) getRunningTunnelPort(projectID, vmName, zone string) int {
+	a.tunnelsMu.RLock()
+	defer a.tunnelsMu.RUnlock()
+
+	for _, t := range a.tunnels {
+		if t.ProjectID == projectID && t.VMName == vmName && t.Zone == zone && t.Status == "running" {
+			return t.LocalPort
+		}
+	}
+	return 0
+}
+
+// createOrUpdateBookmarkWithCreds creates or updates a Windows App bookmark with credentials
+func (a *App) createOrUpdateBookmarkWithCreds(conn *Favorite, localPort int, username, password string) BookmarkResult {
+	bookmarkID := conn.ID
+	friendlyName := fmt.Sprintf("IAP:%s/%s", conn.ProjectID, conn.InstanceName)
+	hostname := fmt.Sprintf("localhost:%d", localPort)
+
+	cmd := exec.Command(WindowsAppCLI,
+		"--script", "bookmark", "write", bookmarkID,
+		"--hostname", hostname,
+		"--username", username,
+		"--password", password,
+		"--friendlyname", friendlyName,
+		"--group", BookmarkGroup,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return BookmarkResult{
+			Success:    false,
+			BookmarkID: bookmarkID,
+			Error:      fmt.Sprintf("Failed to create bookmark: %v - %s", err, string(output)),
+		}
+	}
+
+	return BookmarkResult{
+		Success:    true,
+		BookmarkID: bookmarkID,
+	}
+}
+
+// ==================== macOS Keychain Integration ====================
+
+// saveToKeychain saves a password to the macOS Keychain
+func (a *App) saveToKeychain(service, account, password string) error {
+	// First try to delete any existing entry
+	deleteCmd := exec.Command("security", "delete-generic-password",
+		"-s", service,
+		"-a", account,
+	)
+	_ = deleteCmd.Run() // Ignore error if not found
+
+	// Add new entry
+	cmd := exec.Command("security", "add-generic-password",
+		"-s", service,
+		"-a", account,
+		"-w", password,
+		"-U", // Update if exists
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to save to Keychain: %v - %s", err, string(output))
+	}
+	return nil
+}
+
+// GetPasswordFromKeychain retrieves a password from the macOS Keychain
+func (a *App) GetPasswordFromKeychain(projectID, zone, instance, username string) (string, error) {
+	account := fmt.Sprintf("%s/%s/%s/%s", projectID, zone, instance, username)
+	
+	cmd := exec.Command("security", "find-generic-password",
+		"-s", KeychainService,
+		"-a", account,
+		"-w", // Output password only
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("password not found in Keychain")
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// DeletePasswordFromKeychain removes a password from the macOS Keychain
+func (a *App) DeletePasswordFromKeychain(projectID, zone, instance, username string) error {
+	account := fmt.Sprintf("%s/%s/%s/%s", projectID, zone, instance, username)
+	
+	cmd := exec.Command("security", "delete-generic-password",
+		"-s", KeychainService,
+		"-a", account,
+	)
+
+	_, err := cmd.CombinedOutput()
+	return err
+}
+
+// Helper function to create string pointer
+func stringPtr(s string) *string {
+	return &s
+}
+
+// GetConnectionInfo returns detailed info about a saved connection
+func (a *App) GetConnectionInfo(connectionID string) *Favorite {
+	a.configMu.RLock()
+	defer a.configMu.RUnlock()
+
+	for _, f := range a.config.Favorites {
+		if f.ID == connectionID {
+			// Return a copy
+			copy := f
+			return &copy
+		}
+	}
+	return nil
+}
+
+// UpdateConnectionBookmarkStatus updates the bookmark status for a connection
+func (a *App) UpdateConnectionBookmarkStatus(connectionID string, hasBookmark, hasCreds bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+
+	for i := range a.config.Favorites {
+		if a.config.Favorites[i].ID == connectionID {
+			a.config.Favorites[i].HasBookmark = hasBookmark
+			a.config.Favorites[i].BookmarkHasCreds = hasCreds
+			return a.saveConfigLocked()
+		}
+	}
+	return fmt.Errorf("connection not found")
+}
+
+// saveConfigLocked saves config without acquiring lock (caller must hold lock)
+func (a *App) saveConfigLocked() error {
+	data, err := json.MarshalIndent(a.config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(a.configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(a.configPath, data, 0644)
 }

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IAP Tunnel Manager</title>
     <link rel="stylesheet" href="/src/style.css">
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
     <!-- macOS Title Bar Drag Region -->
@@ -37,149 +36,347 @@
 
         <!-- Main Container -->
         <div class="container">
-            <!-- Header -->
-            <header class="header">
-                <h1>IAP Tunnel Manager</h1>
-                <div class="header-status">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <h1>IAP Tunnel Manager</h1>
                     <span id="connection-status" class="status-indicator"></span>
+                </div>
+                <div class="top-bar-right">
+                    <button id="open-windows-app-btn" class="btn btn-secondary btn-small" disabled title="Open Windows App">
+                        <span class="btn-icon-text">⊞</span> Open Windows App
+                    </button>
                 </div>
             </header>
 
-            <!-- Favorites Section -->
-            <section class="favorites-section" id="favorites-section">
-                <div class="favorites-header">
-                    <h3>Favorites</h3>
-                </div>
-                <div id="favorites-list" class="favorites-list">
-                    <div class="favorites-empty">No favorites yet. Star a VM to add it here.</div>
-                </div>
-            </section>
-
-            <!-- Main Content -->
-            <main class="main-content">
-                <!-- Left Panel: Projects -->
-                <section class="panel projects-panel">
+            <!-- Main Layout: Two Panels -->
+            <div class="main-layout">
+                <!-- Left Panel: Saved Connections -->
+                <section class="panel connections-panel">
                     <div class="panel-header">
-                        <h2>Projects</h2>
-                        <input 
-                            type="search" 
-                            id="project-search" 
-                            placeholder="Search projects..."
-                            class="search-input"
-                            autocomplete="off"
-                        >
+                        <h2>Saved Connections</h2>
+                        <button id="new-connection-btn" class="btn btn-primary btn-small">+ New</button>
                     </div>
                     <div class="panel-content">
-                        <div id="projects-list" class="list-container">
-                            <div class="loading">Loading projects...</div>
+                        <div id="connections-list" class="connections-list">
+                            <div class="connections-empty">No saved connections yet</div>
                         </div>
+                    </div>
+                    <div class="panel-footer">
+                        <button id="stop-all-btn" class="btn btn-small btn-danger-outline" title="Stop all running tunnels">Stop All</button>
                     </div>
                 </section>
 
-                <!-- Right Panel: VMs -->
-                <section class="panel vms-panel">
-                    <div class="panel-header">
-                        <h2>Virtual Machines</h2>
-                        <div class="vm-header-actions">
-                            <input 
-                                type="search" 
-                                id="vm-search" 
-                                placeholder="Search VMs..."
-                                class="search-input"
-                                autocomplete="off"
-                                disabled
-                            >
-                            <button id="toggle-favorite-btn" class="btn btn-icon" disabled title="Add to favorites">
-                                <span class="star-icon">☆</span>
-                            </button>
+                <!-- Right Panel: Connection Details / New Connection -->
+                <section class="panel details-panel">
+                    <!-- Connection Details View (when a saved connection is selected) -->
+                    <div id="connection-details-view" class="panel-view hidden">
+                        <div class="panel-header details-header">
+                            <div class="details-title">
+                                <h2 id="connection-name">Connection Name</h2>
+                                <span id="connection-status-badge" class="connection-status-badge">No tunnel</span>
+                            </div>
+                            <div class="details-header-actions">
+                                <button id="menu-btn" class="btn btn-icon-only" title="More actions">
+                                    <span class="menu-dots">⋯</span>
+                                </button>
+                                <!-- Dropdown Menu -->
+                                <div id="overflow-menu" class="overflow-menu hidden">
+                                    <button id="menu-create-bookmark" class="menu-item" disabled>
+                                        <span class="menu-icon">🔖</span> Create Windows App Bookmark
+                                    </button>
+                                    <button id="menu-generate-password" class="menu-item">
+                                        <span class="menu-icon">🔑</span> Generate Windows Password
+                                    </button>
+                                    <div class="menu-divider"></div>
+                                    <button id="menu-delete-connection" class="menu-item menu-item-danger">
+                                        <span class="menu-icon">🗑️</span> Delete Connection
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel-content details-content">
+                            <div class="connection-info">
+                                <div class="info-row">
+                                    <span class="info-label">Project:</span>
+                                    <span id="detail-project" class="info-value">-</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">VM:</span>
+                                    <span id="detail-vm" class="info-value">-</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Zone:</span>
+                                    <span id="detail-zone" class="info-value">-</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Address:</span>
+                                    <span id="detail-address" class="info-value address-value">-</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Username:</span>
+                                    <span id="detail-username" class="info-value">-</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Bookmark:</span>
+                                    <span id="detail-bookmark" class="info-value bookmark-status">-</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Primary Actions -->
+                            <div class="primary-actions">
+                                <button id="start-tunnel-btn" class="btn btn-primary" disabled>
+                                    Start Tunnel
+                                </button>
+                                <button id="stop-tunnel-btn" class="btn btn-danger" disabled>
+                                    Stop Tunnel
+                                </button>
+                                <button id="copy-address-btn" class="btn btn-secondary" disabled>
+                                    Copy Address
+                                </button>
+                            </div>
+
+                            <!-- Logs -->
+                            <div class="logs-section">
+                                <div class="logs-header">
+                                    <h3>Logs</h3>
+                                    <button id="clear-logs-btn" class="btn btn-small">Clear</button>
+                                </div>
+                                <div id="logs-container" class="logs-container">
+                                    <div class="log-placeholder">No logs yet...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="panel-content">
-                        <div id="vms-list" class="list-container">
-                            <div class="placeholder">Select a project to view VMs</div>
+
+                    <!-- New/Edit Connection View -->
+                    <div id="new-connection-view" class="panel-view">
+                        <div class="panel-header">
+                            <h2 id="new-connection-title">New Connection</h2>
+                        </div>
+                        <div class="panel-content new-connection-content">
+                            <!-- Project Selection -->
+                            <div class="form-group">
+                                <label>Project</label>
+                                <input 
+                                    type="search" 
+                                    id="project-search" 
+                                    placeholder="Search projects..."
+                                    class="form-input search-input"
+                                    autocomplete="off"
+                                >
+                                <div id="projects-list" class="selection-list">
+                                    <div class="loading">Loading projects...</div>
+                                </div>
+                            </div>
+
+                            <!-- VM Selection -->
+                            <div class="form-group">
+                                <label>Virtual Machine</label>
+                                <input 
+                                    type="search" 
+                                    id="vm-search" 
+                                    placeholder="Search VMs..."
+                                    class="form-input search-input"
+                                    autocomplete="off"
+                                    disabled
+                                >
+                                <div id="vms-list" class="selection-list">
+                                    <div class="placeholder">Select a project first</div>
+                                </div>
+                            </div>
+
+                            <!-- Selected Summary -->
+                            <div class="selection-summary" id="selection-summary">
+                                <div class="summary-row">
+                                    <span class="summary-label">Project:</span>
+                                    <span id="summary-project" class="summary-value">-</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">VM:</span>
+                                    <span id="summary-vm" class="summary-value">-</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Zone:</span>
+                                    <span id="summary-zone" class="summary-value">-</span>
+                                </div>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="form-actions">
+                                <button id="cancel-connection-btn" class="btn btn-secondary">Cancel</button>
+                                <button id="save-connection-btn" class="btn btn-primary" disabled>Save Connection</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty State (no connection selected) -->
+                    <div id="empty-state-view" class="panel-view hidden">
+                        <div class="empty-state-centered">
+                            <div class="empty-state-icon">🖥️</div>
+                            <div class="empty-state-text">Select a connection or create a new one</div>
                         </div>
                     </div>
                 </section>
-            </main>
+            </div>
+        </div>
+    </div>
 
-            <!-- Tunnel Control Panel -->
-            <section class="tunnel-panel">
-                <!-- Selection Info & Actions -->
-                <div class="tunnel-info">
-                    <div class="tunnel-details">
-                        <div class="detail-row">
-                            <span class="label">Project:</span>
-                            <span id="selected-project" class="value">-</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="label">VM:</span>
-                            <span id="selected-vm" class="value">-</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="label">Zone:</span>
-                            <span id="selected-zone" class="value">-</span>
-                        </div>
+    <!-- Password Generation Modal -->
+    <div id="password-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Generate Windows Password</h3>
+                <button class="modal-close" id="password-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-warning">
+                    <span class="warning-icon">⚠️</span>
+                    <p>This resets the Windows password on the VM and may break access to encrypted data (EFS/DPAPI). Continue?</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password-username">Username</label>
+                    <input type="text" id="password-username" class="form-input" value="Administrator">
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="password-save-keychain" checked>
+                        <span>Store password in macOS Keychain</span>
+                    </label>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="password-update-bookmark" checked>
+                        <span>Update Windows App bookmark after generation</span>
+                    </label>
+                    <div id="bookmark-warning" class="checkbox-hint hidden">Windows App not installed</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="password-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="password-generate-btn" class="btn btn-primary">Generate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Result Modal -->
+    <div id="password-result-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Password Generated</h3>
+            </div>
+            <div class="modal-body">
+                <div class="result-success">
+                    <span class="success-icon">✓</span>
+                    <p>Windows password has been generated successfully.</p>
+                </div>
+                
+                <div class="credential-row">
+                    <span class="credential-label">Username:</span>
+                    <span id="result-username" class="credential-value">-</span>
+                    <button class="btn btn-small btn-copy" data-copy="result-username" title="Copy username">📋</button>
+                </div>
+                
+                <div class="credential-row">
+                    <span class="credential-label">Password:</span>
+                    <span id="result-password" class="credential-value password-value">••••••••</span>
+                    <button class="btn btn-small btn-copy" data-copy="result-password" title="Copy password">📋</button>
+                    <button class="btn btn-small" id="toggle-password-btn" title="Show/Hide password">👁</button>
+                </div>
+                
+                <div class="result-info">
+                    <div id="result-keychain" class="result-item hidden">
+                        <span class="result-icon">🔐</span> Saved to macOS Keychain
                     </div>
-                    <div class="tunnel-actions">
-                        <button id="start-tunnel-btn" class="btn btn-primary" disabled>
-                            Start Tunnel
-                        </button>
-                        <button id="start-tunnel-bookmark-btn" class="btn btn-primary" disabled title="Start tunnel and create Windows App bookmark">
-                            Start + Bookmark
-                        </button>
-                        <button id="open-windows-app-btn" class="btn btn-secondary" disabled title="Open Windows App">
-                            Open Windows App
-                        </button>
+                    <div id="result-bookmark" class="result-item hidden">
+                        <span class="result-icon">🔖</span> Windows App bookmark updated
                     </div>
                 </div>
+                
+                <div class="result-warning">
+                    <span class="warning-icon">⚠️</span>
+                    <p>This password will not be shown again. Make sure to copy it now if needed.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="password-done-btn" class="btn btn-primary">Done</button>
+            </div>
+        </div>
+    </div>
 
-                <!-- Active Tunnels List -->
-                <div class="tunnels-list-panel">
-                    <div class="tunnels-list-header">
-                        <h3>Active Tunnels</h3>
-                        <div class="tunnels-list-actions">
-                            <button id="stop-all-btn" class="btn btn-small btn-danger-outline" title="Stop all running tunnels">Stop All</button>
-                            <button id="clear-stopped-btn" class="btn btn-small" title="Remove stopped tunnels">Clear Stopped</button>
-                        </div>
+    <!-- Loading Modal -->
+    <div id="loading-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-small">
+            <div class="loading-spinner"></div>
+            <p id="loading-message">Generating password...</p>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-confirm">
+            <div class="modal-header">
+                <h3 id="confirm-title">Confirm</h3>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message">Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button id="confirm-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="confirm-ok-btn" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bookmark Modal -->
+    <div id="bookmark-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create Windows App Bookmark</h3>
+                <button class="modal-close" id="bookmark-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Create a bookmark in Windows App for quick RDP access.</p>
+                
+                <div class="bookmark-address-info">
+                    <span class="info-label">Address:</span>
+                    <span id="bookmark-address" class="info-value">localhost:3389</span>
+                </div>
+                
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="bookmark-with-password">
+                        <span>Generate password and include credentials</span>
+                    </label>
+                    <div class="checkbox-hint">This will reset the Windows password on the VM</div>
+                </div>
+                
+                <div id="bookmark-password-options" class="hidden">
+                    <div class="form-group">
+                        <label for="bookmark-username">Username</label>
+                        <input type="text" id="bookmark-username" class="form-input" value="Administrator">
                     </div>
-                    <div id="tunnels-list" class="tunnels-list">
-                        <div class="tunnels-empty">No active tunnels</div>
+                    
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="bookmark-save-keychain" checked>
+                            <span>Store password in macOS Keychain</span>
+                        </label>
                     </div>
                 </div>
-
-                <!-- Selected Tunnel Actions -->
-                <div class="selected-tunnel-panel" id="selected-tunnel-panel" style="display: none;">
-                    <div class="selected-tunnel-info">
-                        <div class="selected-tunnel-details">
-                            <span class="tunnel-vm-name" id="tunnel-vm-name">-</span>
-                            <span class="tunnel-address" id="tunnel-address">-</span>
-                            <span class="tunnel-status-badge" id="tunnel-status">-</span>
-                        </div>
-                        <div class="selected-tunnel-actions">
-                            <button id="stop-tunnel-btn" class="btn btn-danger btn-small" disabled>
-                                Stop
-                            </button>
-                            <button id="copy-address-btn" class="btn btn-secondary btn-small" disabled>
-                                Copy Address
-                            </button>
-                            <button id="remove-tunnel-btn" class="btn btn-secondary btn-small" disabled title="Remove from list">
-                                Remove
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Logs Panel -->
-                <div class="logs-panel">
-                    <div class="logs-header">
-                        <h3>Tunnel Logs</h3>
-                        <button id="clear-logs-btn" class="btn btn-small">Clear</button>
-                    </div>
-                    <div id="logs-container" class="logs-container">
-                        <div class="log-placeholder">Select a tunnel to view logs...</div>
-                    </div>
-                </div>
-            </section>
+            </div>
+            <div class="modal-footer">
+                <button id="bookmark-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="bookmark-create-btn" class="btn btn-primary">Create Bookmark</button>
+            </div>
         </div>
     </div>
 

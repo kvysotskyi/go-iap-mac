@@ -2,86 +2,133 @@
 
 // State
 const state = {
-    selectedProject: null,
-    selectedVM: null,
+    connections: [],        // Saved connections (formerly favorites)
+    selectedConnection: null,
     tunnels: [],           // All tunnels
-    selectedTunnel: null,  // Currently selected tunnel in the list
+    selectedTunnel: null,  // Currently selected tunnel for the connection
     projects: [],
     vms: [],
-    favorites: [],         // Saved favorites
     windowsAppInstalled: false,
-    lastConnection: null   // Last used connection
+    // New connection form state
+    newConnection: {
+        name: '',
+        project: null,
+        vm: null
+    },
+    isStartingTunnel: false,
+    currentView: 'new' // 'new', 'details', 'empty'
 };
 
 // DOM Elements
 const elements = {
+    // Auth
     authBanner: document.getElementById('auth-status'),
     authMessage: document.querySelector('.auth-message'),
     authBtn: document.getElementById('auth-btn'),
     authBtnText: document.querySelector('.auth-btn-text'),
     authBtnSpinner: document.querySelector('.auth-btn-spinner'),
+    // Windows App
     windowsAppBanner: document.getElementById('windows-app-status'),
     windowsAppMessage: document.querySelector('.warning-message'),
+    // Top bar
     connectionStatus: document.getElementById('connection-status'),
-    projectSearch: document.getElementById('project-search'),
-    vmSearch: document.getElementById('vm-search'),
-    projectsList: document.getElementById('projects-list'),
-    vmsList: document.getElementById('vms-list'),
-    selectedProject: document.getElementById('selected-project'),
-    selectedVM: document.getElementById('selected-vm'),
-    selectedZone: document.getElementById('selected-zone'),
-    startTunnelBtn: document.getElementById('start-tunnel-btn'),
-    startTunnelBookmarkBtn: document.getElementById('start-tunnel-bookmark-btn'),
     openWindowsAppBtn: document.getElementById('open-windows-app-btn'),
-    tunnelsList: document.getElementById('tunnels-list'),
-    stopAllBtn: document.getElementById('stop-all-btn'),
-    clearStoppedBtn: document.getElementById('clear-stopped-btn'),
-    selectedTunnelPanel: document.getElementById('selected-tunnel-panel'),
-    tunnelVmName: document.getElementById('tunnel-vm-name'),
-    tunnelAddress: document.getElementById('tunnel-address'),
-    tunnelStatus: document.getElementById('tunnel-status'),
+    // Connections panel
+    connectionsList: document.getElementById('connections-list'),
+    newConnectionBtn: document.getElementById('new-connection-btn'),
+    // Views
+    connectionDetailsView: document.getElementById('connection-details-view'),
+    newConnectionView: document.getElementById('new-connection-view'),
+    emptyStateView: document.getElementById('empty-state-view'),
+    // Details view
+    connectionName: document.getElementById('connection-name'),
+    connectionStatusBadge: document.getElementById('connection-status-badge'),
+    menuBtn: document.getElementById('menu-btn'),
+    overflowMenu: document.getElementById('overflow-menu'),
+    menuCreateBookmark: document.getElementById('menu-create-bookmark'),
+    menuGeneratePassword: document.getElementById('menu-generate-password'),
+    menuDeleteConnection: document.getElementById('menu-delete-connection'),
+    detailProject: document.getElementById('detail-project'),
+    detailVm: document.getElementById('detail-vm'),
+    detailZone: document.getElementById('detail-zone'),
+    detailAddress: document.getElementById('detail-address'),
+    startTunnelBtn: document.getElementById('start-tunnel-btn'),
     stopTunnelBtn: document.getElementById('stop-tunnel-btn'),
     copyAddressBtn: document.getElementById('copy-address-btn'),
-    removeTunnelBtn: document.getElementById('remove-tunnel-btn'),
     clearLogsBtn: document.getElementById('clear-logs-btn'),
+    // Panel footer buttons
+    stopAllBtn: document.getElementById('stop-all-btn'),
     logsContainer: document.getElementById('logs-container'),
-    // Favorites elements
-    favoritesSection: document.getElementById('favorites-section'),
-    favoritesList: document.getElementById('favorites-list'),
-    toggleFavoriteBtn: document.getElementById('toggle-favorite-btn')
+    // New connection view
+    newConnectionTitle: document.getElementById('new-connection-title'),
+    projectSearch: document.getElementById('project-search'),
+    projectsList: document.getElementById('projects-list'),
+    vmSearch: document.getElementById('vm-search'),
+    vmsList: document.getElementById('vms-list'),
+    summaryProject: document.getElementById('summary-project'),
+    summaryVm: document.getElementById('summary-vm'),
+    summaryZone: document.getElementById('summary-zone'),
+    cancelConnectionBtn: document.getElementById('cancel-connection-btn'),
+    saveConnectionBtn: document.getElementById('save-connection-btn'),
+    // Password modals
+    passwordModal: document.getElementById('password-modal'),
+    passwordModalClose: document.getElementById('password-modal-close'),
+    passwordUsername: document.getElementById('password-username'),
+    passwordSaveKeychain: document.getElementById('password-save-keychain'),
+    passwordUpdateBookmark: document.getElementById('password-update-bookmark'),
+    bookmarkWarning: document.getElementById('bookmark-warning'),
+    passwordCancelBtn: document.getElementById('password-cancel-btn'),
+    passwordGenerateBtn: document.getElementById('password-generate-btn'),
+    passwordResultModal: document.getElementById('password-result-modal'),
+    resultUsername: document.getElementById('result-username'),
+    resultPassword: document.getElementById('result-password'),
+    resultKeychain: document.getElementById('result-keychain'),
+    resultBookmark: document.getElementById('result-bookmark'),
+    togglePasswordBtn: document.getElementById('toggle-password-btn'),
+    passwordDoneBtn: document.getElementById('password-done-btn'),
+    loadingModal: document.getElementById('loading-modal'),
+    loadingMessage: document.getElementById('loading-message'),
+    // Confirm modal
+    confirmModal: document.getElementById('confirm-modal'),
+    confirmTitle: document.getElementById('confirm-title'),
+    confirmMessage: document.getElementById('confirm-message'),
+    confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
+    confirmOkBtn: document.getElementById('confirm-ok-btn'),
+    // Bookmark modal
+    bookmarkModal: document.getElementById('bookmark-modal'),
+    bookmarkModalClose: document.getElementById('bookmark-modal-close'),
+    bookmarkAddress: document.getElementById('bookmark-address'),
+    bookmarkWithPassword: document.getElementById('bookmark-with-password'),
+    bookmarkPasswordOptions: document.getElementById('bookmark-password-options'),
+    bookmarkUsername: document.getElementById('bookmark-username'),
+    bookmarkSaveKeychain: document.getElementById('bookmark-save-keychain'),
+    bookmarkCancelBtn: document.getElementById('bookmark-cancel-btn'),
+    bookmarkCreateBtn: document.getElementById('bookmark-create-btn')
 };
+
+// Confirm modal state
+let confirmResolve = null;
 
 // Initialize
 async function init() {
-    // Check authentication
     await checkAuth();
-    
-    // Check Windows App availability
     await checkWindowsApp();
-    
-    // Load favorites
-    await loadFavorites();
-    
-    // Load last connection
-    await loadLastConnection();
-    
-    // Load projects
+    await loadConnections();
     await loadProjects();
-    
-    // Restore last connection if available
-    await restoreLastConnection();
-    
-    // Load existing tunnels
     await loadTunnels();
-    
-    // Setup event listeners
     setupEventListeners();
-    
-    // Start polling for tunnel status
     startStatusPolling();
+    
+    // Show appropriate view
+    if (state.connections.length === 0) {
+        showView('new');
+    } else {
+        showView('empty');
+    }
 }
 
-// Check authentication status
+// ==================== Authentication ====================
+
 async function checkAuth() {
     try {
         const result = await window.go.main.App.CheckAuth();
@@ -101,7 +148,6 @@ async function checkAuth() {
     }
 }
 
-// Show auth error banner
 function showAuthError(message) {
     elements.authBanner.classList.remove('hidden');
     elements.authBanner.classList.remove('authenticating');
@@ -109,23 +155,19 @@ function showAuthError(message) {
     resetAuthButton();
 }
 
-// Hide auth error banner
 function hideAuthError() {
     elements.authBanner.classList.add('hidden');
     elements.authBanner.classList.remove('authenticating');
     resetAuthButton();
 }
 
-// Reset auth button to default state
 function resetAuthButton() {
     elements.authBtn.disabled = false;
     elements.authBtnText.textContent = 'Authenticate (ADC)';
     elements.authBtnSpinner.classList.add('hidden');
 }
 
-// Run ADC authentication
 async function runAuthentication() {
-    // First check if gcloud is available
     try {
         const gcloudInfo = await window.go.main.App.FindGcloud();
         if (!gcloudInfo.found) {
@@ -137,373 +179,371 @@ async function runAuthentication() {
         return;
     }
     
-    // Update UI to show authenticating state
     elements.authBtn.disabled = true;
     elements.authBtnText.textContent = 'Authenticating...';
     elements.authBtnSpinner.classList.remove('hidden');
     elements.authBanner.classList.add('authenticating');
-    elements.authMessage.textContent = 'Opening browser for Google authentication. Please complete the sign-in flow...';
+    elements.authMessage.textContent = 'Opening browser for Google authentication...';
     
     try {
-        // Run the authentication (this will open browser and wait)
         const result = await window.go.main.App.RunADCLogin();
-        
         if (result.status === 'success') {
-            // Authentication successful
             hideAuthError();
-            showToast('Successfully authenticated with Google Cloud', 'success');
-            
-            // Reload projects now that we're authenticated
+            showToast('Successfully authenticated', 'success');
             await loadProjects();
-            
-            // Try to restore last connection
-            await restoreLastConnection();
         } else {
-            // Authentication failed
             showAuthError(result.message);
-            showToast('Authentication failed', 'error');
         }
     } catch (error) {
         showAuthError('Authentication error: ' + error.message);
-        showToast('Authentication error', 'error');
     }
 }
 
-// Check Windows App availability
+// ==================== Windows App ====================
+
 async function checkWindowsApp() {
     try {
         const result = await window.go.main.App.CheckWindowsApp();
         state.windowsAppInstalled = result.installed;
         
         if (!result.installed) {
-            showWindowsAppWarning(result.error || 'Windows App not found');
+            elements.windowsAppBanner.classList.remove('hidden');
         } else {
-            hideWindowsAppWarning();
+            elements.windowsAppBanner.classList.add('hidden');
         }
     } catch (error) {
         state.windowsAppInstalled = false;
-        showWindowsAppWarning('Failed to check Windows App: ' + error.message);
     }
-    
     updateButtons();
 }
 
-// Show Windows App warning banner
-function showWindowsAppWarning(message) {
-    elements.windowsAppBanner.classList.remove('hidden');
-    if (elements.windowsAppMessage) {
-        elements.windowsAppMessage.textContent = message;
+async function openWindowsApp() {
+    if (!state.windowsAppInstalled) {
+        showToast('Windows App is not installed', 'error');
+        return;
+    }
+    try {
+        await window.go.main.App.OpenWindowsApp();
+        showToast('Opening Windows App...', 'success');
+    } catch (error) {
+        showToast('Failed to open Windows App: ' + error.message, 'error');
     }
 }
 
-// Hide Windows App warning banner
-function hideWindowsAppWarning() {
-    elements.windowsAppBanner.classList.add('hidden');
-}
+// ==================== Connections (Saved) ====================
 
-// Load favorites from backend
-async function loadFavorites() {
+async function loadConnections() {
     try {
         const favorites = await window.go.main.App.GetFavorites();
-        state.favorites = favorites || [];
-        renderFavorites();
+        state.connections = (favorites || []).map(f => ({
+            id: f.id,
+            name: f.displayName,
+            projectId: f.projectId,
+            projectName: f.projectName,
+            vmName: f.instanceName,
+            zone: f.zone,
+            remotePort: f.remotePort || 3389,
+            localPort: f.localPort || 0,
+            username: f.username || '',
+            hasBookmark: f.hasBookmark || false,
+            bookmarkHasCreds: f.bookmarkHasCreds || false
+        }));
+        renderConnectionsList();
     } catch (error) {
-        console.error('Failed to load favorites:', error);
-        state.favorites = [];
+        console.error('Failed to load connections:', error);
+        state.connections = [];
     }
 }
 
-// Render favorites list
-function renderFavorites() {
-    if (!state.favorites || state.favorites.length === 0) {
-        elements.favoritesList.innerHTML = '<div class="favorites-empty">No favorites yet. Star a VM to add it here.</div>';
-        elements.favoritesSection.classList.add('hidden');
+function renderConnectionsList() {
+    if (state.connections.length === 0) {
+        elements.connectionsList.innerHTML = '<div class="connections-empty">No saved connections yet</div>';
         return;
     }
     
-    elements.favoritesSection.classList.remove('hidden');
-    elements.favoritesList.innerHTML = state.favorites.map(fav => `
-        <div class="favorite-item" 
-             data-favorite-id="${fav.id}"
-             data-project-id="${fav.projectId}"
-             data-project-name="${escapeHtml(fav.projectName || fav.projectId)}"
-             data-instance-name="${fav.instanceName}"
-             data-zone="${fav.zone}">
-            <span class="star">★</span>
-            <span class="name" title="${escapeHtml(fav.displayName)}">${escapeHtml(fav.displayName)}</span>
-            <span class="zone">${escapeHtml(fav.zone)}</span>
-            <button class="remove-btn" data-favorite-id="${fav.id}" title="Remove from favorites">×</button>
-        </div>
-    `).join('');
+    elements.connectionsList.innerHTML = state.connections.map(conn => {
+        const isSelected = state.selectedConnection?.id === conn.id;
+        const tunnelsForConn = getConnectionTunnels(conn);
+        const hasRunning = tunnelsForConn.some(t => t.status === 'running' || t.status === 'starting');
+        const statusClass = hasRunning ? (tunnelsForConn.some(t => t.status === 'running') ? 'running' : 'starting') : '';
+        
+        return `
+            <div class="connection-item ${isSelected ? 'selected' : ''}" data-connection-id="${conn.id}">
+                <div class="connection-item-name">
+                    <span class="connection-item-status ${statusClass}"></span>
+                    ${escapeHtml(conn.name)}
+                </div>
+                <div class="connection-item-details">${escapeHtml(conn.vmName)} • ${escapeHtml(conn.zone)}</div>
+            </div>
+        `;
+    }).join('');
     
-    // Add click handlers for favorites
-    elements.favoritesList.querySelectorAll('.favorite-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            // Don't trigger if clicking remove button
-            if (e.target.classList.contains('remove-btn')) return;
-            selectFavorite(
-                item.dataset.projectId,
-                item.dataset.projectName,
-                item.dataset.instanceName,
-                item.dataset.zone
-            );
-        });
-    });
-    
-    // Add click handlers for remove buttons
-    elements.favoritesList.querySelectorAll('.remove-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            removeFavorite(btn.dataset.favoriteId);
-        });
+    // Add click handlers
+    elements.connectionsList.querySelectorAll('.connection-item').forEach(item => {
+        item.addEventListener('click', () => selectConnection(item.dataset.connectionId));
     });
 }
 
-// Select a favorite
-async function selectFavorite(projectId, projectName, instanceName, zone) {
-    // Select the project first
-    state.selectedProject = { id: projectId, name: projectName };
-    elements.selectedProject.textContent = projectId;
-    elements.projectSearch.value = '';
-    elements.vmSearch.disabled = false;
-    elements.vmSearch.value = '';
+function selectConnection(connectionId) {
+    const conn = state.connections.find(c => c.id === connectionId);
+    if (!conn) return;
     
-    // Re-render projects to show selection and scroll into view
-    renderProjects(state.projects);
+    state.selectedConnection = conn;
+    state.selectedTunnel = null;
     
-    // Load VMs for this project
-    await loadVMs(projectId);
+    // Update details view
+    elements.connectionName.textContent = conn.name;
+    elements.detailProject.textContent = conn.projectId;
+    elements.detailVm.textContent = conn.vmName;
+    elements.detailZone.textContent = conn.zone;
     
-    // Find and select the VM (try exact match first, then partial zone match)
-    let vm = state.vms.find(v => v.name === instanceName && v.zone === zone);
-    if (!vm) {
-        // Try matching just by name if zone format differs
-        vm = state.vms.find(v => v.name === instanceName);
+    // Update fixed address (always show the connection's port)
+    elements.detailAddress.textContent = `localhost:${conn.localPort}`;
+    
+    // Update username
+    const detailUsername = document.getElementById('detail-username');
+    if (detailUsername) {
+        detailUsername.textContent = conn.username || '-';
     }
     
-    if (vm) {
-        // Update state and UI
-        state.selectedVM = { name: vm.name, zone: vm.zone, status: vm.status };
-        elements.selectedVM.textContent = vm.name;
-        elements.selectedZone.textContent = vm.zone;
-        
-        // Re-render VMs to show selection and scroll into view
-        renderVMs(state.vms);
-        
-        // Update favorite button
-        updateFavoriteButton();
-        
-        showToast(`Selected ${vm.name} in ${projectName || projectId}`, 'success');
-    } else {
-        // VM not found - might have been deleted
-        state.selectedVM = { name: instanceName, zone: zone, status: 'UNKNOWN' };
-        elements.selectedVM.textContent = instanceName;
-        elements.selectedZone.textContent = zone;
-        
-        // Re-render VMs (selection won't show but that's expected)
-        renderVMs(state.vms);
-        
-        // Update favorite button
-        updateFavoriteButton();
-        
-        showToast(`VM ${instanceName} not found in project - it may have been deleted`, 'error');
-    }
+    // Update bookmark status
+    updateBookmarkStatusDisplay(conn);
     
+    // Update tunnel status (running/stopped)
+    updateConnectionStatus();
+    
+    // Show details view
+    showView('details');
+    renderConnectionsList();
     updateButtons();
 }
 
-// Toggle favorite for selected VM
-async function toggleFavorite() {
-    if (!state.selectedProject || !state.selectedVM) {
-        showToast('Please select a VM first', 'error');
+function updateBookmarkStatusDisplay(conn) {
+    const detailBookmark = document.getElementById('detail-bookmark');
+    if (!detailBookmark) return;
+    
+    if (!conn.hasBookmark) {
+        detailBookmark.innerHTML = '<span class="status-icon">-</span> No bookmark';
+        detailBookmark.className = 'info-value bookmark-status no-bookmark';
+    } else if (conn.bookmarkHasCreds) {
+        detailBookmark.innerHTML = '<span class="status-icon">🔖</span> With credentials';
+        detailBookmark.className = 'info-value bookmark-status has-creds';
+    } else {
+        detailBookmark.innerHTML = '<span class="status-icon">🔖</span> Without credentials';
+        detailBookmark.className = 'info-value bookmark-status has-bookmark';
+    }
+}
+
+function getConnectionTunnels(conn) {
+    if (!conn) return [];
+    return state.tunnels.filter(t => 
+        t.projectId === conn.projectId && 
+        t.vmName === conn.vmName && 
+        t.zone === conn.zone
+    );
+}
+
+function getActiveConnectionTunnel(conn) {
+    const tunnels = getConnectionTunnels(conn);
+    // Return the most recently started running tunnel
+    const running = tunnels.filter(t => t.status === 'running');
+    if (running.length > 0) {
+        return running.sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))[0];
+    }
+    const starting = tunnels.filter(t => t.status === 'starting');
+    if (starting.length > 0) {
+        return starting[0];
+    }
+    return null;
+}
+
+function updateConnectionStatus() {
+    if (!state.selectedConnection) return;
+    
+    const tunnels = getConnectionTunnels(state.selectedConnection);
+    const activeTunnel = getActiveConnectionTunnel(state.selectedConnection);
+    
+    // Update status badge only (address is fixed per connection)
+    if (activeTunnel) {
+        if (activeTunnel.status === 'running') {
+            elements.connectionStatusBadge.textContent = 'Running';
+            elements.connectionStatusBadge.className = 'connection-status-badge running';
+        } else {
+            elements.connectionStatusBadge.textContent = 'Starting';
+            elements.connectionStatusBadge.className = 'connection-status-badge starting';
+        }
+    } else {
+        elements.connectionStatusBadge.textContent = 'Stopped';
+        elements.connectionStatusBadge.className = 'connection-status-badge';
+    }
+    
+    // Update logs for active tunnel
+    if (activeTunnel) {
+        state.selectedTunnel = activeTunnel;
+        updateLogsUI(activeTunnel);
+    } else if (state.selectedTunnel) {
+        const updated = tunnels.find(t => t.id === state.selectedTunnel.id);
+        if (updated) {
+            updateLogsUI(updated);
+        }
+    }
+}
+
+// ==================== New Connection ====================
+
+function showNewConnectionForm() {
+    state.newConnection = { project: null, vm: null };
+    elements.projectSearch.value = '';
+    elements.summaryProject.textContent = '-';
+    elements.summaryVm.textContent = '-';
+    elements.summaryZone.textContent = '-';
+    elements.vmSearch.disabled = true;
+    elements.vmSearch.value = '';
+    elements.vmsList.innerHTML = '<div class="placeholder">Select a project first</div>';
+    elements.newConnectionTitle.textContent = 'New Connection';
+    
+    // Re-render projects to clear selection
+    renderProjects(state.projects);
+    
+    showView('new');
+    updateButtons();
+}
+
+function cancelNewConnection() {
+    if (state.connections.length > 0) {
+        if (state.selectedConnection) {
+            showView('details');
+        } else {
+            showView('empty');
+        }
+    } else {
+        showView('empty');
+    }
+}
+
+async function saveConnection() {
+    if (!state.newConnection.project || !state.newConnection.vm) {
+        showToast('Please select a project and VM', 'error');
         return;
     }
     
-    const isFav = await checkIsFavorite();
-    
-    if (isFav) {
-        // Remove from favorites
-        const fav = state.favorites.find(f => 
-            f.projectId === state.selectedProject.id && 
-            f.instanceName === state.selectedVM.name && 
-            f.zone === state.selectedVM.zone
-        );
-        if (fav) {
-            await removeFavorite(fav.id);
-        }
-    } else {
-        // Add to favorites
-        await addFavorite();
+    // Check if VM is Windows (should have "windows" in the OS or machine type description)
+    const vm = state.newConnection.vm;
+    if (!vm.isWindows) {
+        showToast('Only Windows VMs can be saved. This VM does not appear to be running Windows.', 'error');
+        return;
     }
-}
-
-// Check if current selection is a favorite
-async function checkIsFavorite() {
-    if (!state.selectedProject || !state.selectedVM) return false;
     
-    try {
-        return await window.go.main.App.IsFavorite(
-            state.selectedProject.id,
-            state.selectedVM.name,
-            state.selectedVM.zone
-        );
-    } catch (error) {
-        return false;
+    // Check if connection already exists
+    const existingConn = state.connections.find(c => 
+        c.projectId === state.newConnection.project.id &&
+        c.vmName === state.newConnection.vm.name &&
+        c.zone === state.newConnection.vm.zone
+    );
+    if (existingConn) {
+        showToast('This connection already exists', 'error');
+        return;
     }
-}
-
-// Add current selection to favorites
-async function addFavorite() {
-    if (!state.selectedProject || !state.selectedVM) return;
     
-    const displayName = `${state.selectedVM.name}`;
+    // Generate name: VM name (like before with favorites)
+    const name = state.newConnection.vm.name;
     
     try {
         await window.go.main.App.AddFavorite(
-            displayName,
-            state.selectedProject.id,
-            state.selectedProject.name,
-            state.selectedVM.name,
-            state.selectedVM.zone,
-            3389, // Default RDP port
-            0     // No preferred local port
+            name,
+            state.newConnection.project.id,
+            state.newConnection.project.name,
+            state.newConnection.vm.name,
+            state.newConnection.vm.zone,
+            3389,
+            0
         );
         
-        await loadFavorites();
-        updateFavoriteButton();
-        showToast(`Added ${state.selectedVM.name} to favorites`, 'success');
+        await loadConnections();
+        
+        // Select the new connection
+        const newConn = state.connections.find(c => 
+            c.projectId === state.newConnection.project.id &&
+            c.vmName === state.newConnection.vm.name &&
+            c.zone === state.newConnection.vm.zone
+        );
+        if (newConn) {
+            selectConnection(newConn.id);
+        }
+        
+        showToast('Connection saved', 'success');
     } catch (error) {
-        showToast('Failed to add favorite: ' + error.message, 'error');
+        const errorMsg = error?.message || String(error) || 'Unknown error';
+        showToast('Failed to save connection: ' + errorMsg, 'error');
     }
 }
 
-// Remove a favorite
-async function removeFavorite(favoriteId) {
-    try {
-        await window.go.main.App.RemoveFavorite(favoriteId);
-        await loadFavorites();
-        updateFavoriteButton();
-        showToast('Removed from favorites', 'success');
-    } catch (error) {
-        showToast('Failed to remove favorite: ' + error.message, 'error');
-    }
-}
-
-// Update favorite button state
-async function updateFavoriteButton() {
-    if (!state.selectedProject || !state.selectedVM) {
-        elements.toggleFavoriteBtn.disabled = true;
-        elements.toggleFavoriteBtn.classList.remove('favorited');
-        elements.toggleFavoriteBtn.querySelector('.star-icon').textContent = '☆';
-        elements.toggleFavoriteBtn.title = 'Select a VM to add to favorites';
+async function deleteConnection() {
+    hideOverflowMenu();
+    
+    if (!state.selectedConnection) {
+        showToast('No connection selected', 'error');
         return;
     }
     
-    elements.toggleFavoriteBtn.disabled = false;
+    const hasBookmark = state.selectedConnection.hasBookmark;
+    const confirmMessage = hasBookmark 
+        ? `Are you sure you want to delete "${state.selectedConnection.name}"? This will also delete the Windows App bookmark. This cannot be undone.`
+        : `Are you sure you want to delete "${state.selectedConnection.name}"? This cannot be undone.`;
     
-    const isFav = await checkIsFavorite();
-    if (isFav) {
-        elements.toggleFavoriteBtn.classList.add('favorited');
-        elements.toggleFavoriteBtn.querySelector('.star-icon').textContent = '★';
-        elements.toggleFavoriteBtn.title = 'Remove from favorites';
-    } else {
-        elements.toggleFavoriteBtn.classList.remove('favorited');
-        elements.toggleFavoriteBtn.querySelector('.star-icon').textContent = '☆';
-        elements.toggleFavoriteBtn.title = 'Add to favorites';
-    }
-}
-
-// Load last connection from backend
-async function loadLastConnection() {
-    try {
-        const lastConn = await window.go.main.App.GetLastConnection();
-        state.lastConnection = lastConn;
-    } catch (error) {
-        console.error('Failed to load last connection:', error);
-        state.lastConnection = null;
-    }
-}
-
-// Restore last connection on startup
-async function restoreLastConnection() {
-    if (!state.lastConnection) return;
+    const confirmed = await showConfirm('Delete Connection', confirmMessage);
     
-    const lc = state.lastConnection;
-    
-    // Check if the project exists in our list
-    const project = state.projects.find(p => p.id === lc.projectId);
-    if (!project) {
-        // Project not found, clear last connection
-        console.log('Last connection project not found:', lc.projectId);
-        return;
-    }
-    
-    // Select the project
-    state.selectedProject = { id: lc.projectId, name: lc.projectName || project.name };
-    elements.selectedProject.textContent = lc.projectId;
-    elements.projectSearch.value = '';
-    elements.vmSearch.disabled = false;
-    elements.vmSearch.value = '';
-    
-    // Re-render projects to show selection
-    renderProjects(state.projects);
-    
-    // Load VMs for this project
-    await loadVMs(lc.projectId);
-    
-    // Find and select the VM (try exact match first, then partial zone match)
-    let vm = state.vms.find(v => v.name === lc.instanceName && v.zone === lc.zone);
-    if (!vm) {
-        // Try matching just by name if zone format differs
-        vm = state.vms.find(v => v.name === lc.instanceName);
-    }
-    
-    if (vm) {
-        // Update state and UI directly (don't call selectVM to avoid re-saving)
-        state.selectedVM = { name: vm.name, zone: vm.zone, status: vm.status };
-        elements.selectedVM.textContent = vm.name;
-        elements.selectedZone.textContent = vm.zone;
-        
-        // Re-render VMs to show selection
-        renderVMs(state.vms);
-        
-        // Update favorite button
-        updateFavoriteButton();
-    } else {
-        // VM not found - show as selected but mark as potentially invalid
-        state.selectedVM = { name: lc.instanceName, zone: lc.zone, status: 'UNKNOWN' };
-        elements.selectedVM.textContent = lc.instanceName;
-        elements.selectedZone.textContent = lc.zone;
-        
-        // Re-render VMs (selection won't show but that's expected)
-        renderVMs(state.vms);
-        
-        // Update favorite button
-        updateFavoriteButton();
-    }
-    
-    updateButtons();
-}
-
-// Save last connection
-async function saveLastConnection() {
-    if (!state.selectedProject || !state.selectedVM) return;
+    if (!confirmed) return;
     
     try {
-        await window.go.main.App.SaveLastConnection(
-            state.selectedProject.id,
-            state.selectedProject.name,
-            state.selectedVM.name,
-            state.selectedVM.zone,
-            3389, // Default RDP port
-            0     // No preferred local port
-        );
+        // Delete Windows App bookmark first if it exists
+        if (hasBookmark && state.windowsAppInstalled) {
+            try {
+                await window.go.main.App.DeleteWindowsAppBookmark(state.selectedConnection.id);
+            } catch (e) {
+                console.error('Failed to delete bookmark:', e);
+                // Continue with connection deletion even if bookmark deletion fails
+            }
+        }
+        
+        // Delete the connection
+        await window.go.main.App.RemoveFavorite(state.selectedConnection.id);
+        await loadConnections();
+        state.selectedConnection = null;
+        
+        if (state.connections.length > 0) {
+            showView('empty');
+        } else {
+            showView('new');
+        }
+        
+        showToast('Connection deleted', 'success');
     } catch (error) {
-        console.error('Failed to save last connection:', error);
+        const errorMsg = error?.message || String(error) || 'Unknown error';
+        showToast('Failed to delete connection: ' + errorMsg, 'error');
     }
 }
 
-// Load projects
+// Custom confirm dialog (replaces native confirm which doesn't work in Wails)
+function showConfirm(title, message) {
+    return new Promise((resolve) => {
+        confirmResolve = resolve;
+        elements.confirmTitle.textContent = title;
+        elements.confirmMessage.textContent = message;
+        elements.confirmModal.classList.remove('hidden');
+    });
+}
+
+function hideConfirm(result) {
+    elements.confirmModal.classList.add('hidden');
+    if (confirmResolve) {
+        confirmResolve(result);
+        confirmResolve = null;
+    }
+}
+
+// ==================== Projects & VMs ====================
+
 async function loadProjects(filter = '') {
     elements.projectsList.innerHTML = '<div class="loading">Loading projects...</div>';
     
@@ -512,76 +552,44 @@ async function loadProjects(filter = '') {
         state.projects = projects || [];
         renderProjects(state.projects);
     } catch (error) {
-        elements.projectsList.innerHTML = `<div class="error-message">Failed to load projects: ${error.message}</div>`;
+        elements.projectsList.innerHTML = `<div class="error-message">Failed to load: ${error.message}</div>`;
     }
 }
 
-// Render projects list
 function renderProjects(projects) {
     if (!projects || projects.length === 0) {
-        elements.projectsList.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">📁</div>
-                <div class="empty-state-text">No projects found</div>
-            </div>
-        `;
+        elements.projectsList.innerHTML = '<div class="placeholder">No projects found</div>';
         return;
     }
     
-    elements.projectsList.innerHTML = projects.map(project => {
-        const isSelected = state.selectedProject && state.selectedProject.id === project.id;
-        return `
-            <div class="list-item ${isSelected ? 'selected' : ''}" 
-                 data-project-id="${project.id}" 
-                 data-project-name="${escapeHtml(project.name)}">
-                <div class="list-item-title">${escapeHtml(project.name)}</div>
-                <div class="list-item-subtitle">${escapeHtml(project.id)}</div>
-            </div>
-        `;
-    }).join('');
+    elements.projectsList.innerHTML = projects.map(p => `
+        <div class="list-item ${state.newConnection.project?.id === p.id ? 'selected' : ''}" 
+             data-project-id="${p.id}" data-project-name="${escapeHtml(p.name)}">
+            <div class="list-item-title">${escapeHtml(p.name)}</div>
+            <div class="list-item-subtitle">${escapeHtml(p.id)}</div>
+        </div>
+    `).join('');
     
-    // Add click handlers
     elements.projectsList.querySelectorAll('.list-item').forEach(item => {
         item.addEventListener('click', () => selectProject(item.dataset.projectId, item.dataset.projectName));
     });
-    
-    // Scroll selected project into view
-    scrollSelectedIntoView(elements.projectsList);
 }
 
-// Scroll selected item into view within a container
-function scrollSelectedIntoView(container) {
-    const selectedItem = container.querySelector('.list-item.selected');
-    if (selectedItem) {
-        selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-}
-
-// Select a project
 async function selectProject(projectId, projectName) {
-    state.selectedProject = { id: projectId, name: projectName };
-    state.selectedVM = null;
+    state.newConnection.project = { id: projectId, name: projectName };
+    state.newConnection.vm = null;
     
-    // Update UI
-    elements.selectedProject.textContent = projectId;
-    elements.selectedVM.textContent = '-';
-    elements.selectedZone.textContent = '-';
+    elements.summaryProject.textContent = projectId;
+    elements.summaryVm.textContent = '-';
+    elements.summaryZone.textContent = '-';
     elements.vmSearch.disabled = false;
     elements.vmSearch.value = '';
     
-    // Re-render projects to show selection
     renderProjects(state.projects);
-    
-    // Load VMs
     await loadVMs(projectId);
-    
-    // Update favorite button (will be disabled since no VM selected)
-    updateFavoriteButton();
-    
     updateButtons();
 }
 
-// Load VMs for a project
 async function loadVMs(projectId, filter = '') {
     elements.vmsList.innerHTML = '<div class="loading">Loading VMs...</div>';
     
@@ -590,316 +598,137 @@ async function loadVMs(projectId, filter = '') {
         state.vms = vms || [];
         renderVMs(state.vms);
     } catch (error) {
-        elements.vmsList.innerHTML = `<div class="error-message">Failed to load VMs: ${error.message}</div>`;
+        elements.vmsList.innerHTML = `<div class="error-message">Failed to load: ${error.message}</div>`;
     }
 }
 
-// Render VMs list
 function renderVMs(vms) {
     if (!vms || vms.length === 0) {
-        elements.vmsList.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">🖥️</div>
-                <div class="empty-state-text">No VMs found in this project</div>
-            </div>
-        `;
+        elements.vmsList.innerHTML = '<div class="placeholder">No VMs found</div>';
         return;
     }
     
     elements.vmsList.innerHTML = vms.map(vm => {
-        // Check if this VM is selected
-        const isSelected = state.selectedVM && 
-            state.selectedVM.name === vm.name && 
-            state.selectedVM.zone === vm.zone;
-        const statusLower = (vm.status || 'unknown').toLowerCase();
-        
+        const isSelected = state.newConnection.vm?.name === vm.name && state.newConnection.vm?.zone === vm.zone;
+        const statusClass = (vm.status || 'unknown').toLowerCase();
+        const osIcon = vm.isWindows ? '🪟' : '🐧';
+        const osClass = vm.isWindows ? 'os-windows' : 'os-linux';
         return `
-            <div class="list-item ${isSelected ? 'selected' : ''}" 
+            <div class="list-item ${isSelected ? 'selected' : ''} ${osClass}" 
                  data-vm-name="${vm.name}" 
-                 data-vm-zone="${vm.zone}"
-                 data-vm-status="${vm.status || 'UNKNOWN'}">
+                 data-vm-zone="${vm.zone}" 
+                 data-vm-status="${vm.status}"
+                 data-vm-machine-type="${vm.machineType || ''}"
+                 data-vm-is-windows="${vm.isWindows}">
                 <div class="list-item-title">
+                    <span class="os-icon">${osIcon}</span>
                     ${escapeHtml(vm.name)}
-                    <span class="vm-status ${statusLower}">${vm.status || 'UNKNOWN'}</span>
+                    <span class="vm-status ${statusClass}">${vm.status || 'UNKNOWN'}</span>
                 </div>
                 <div class="list-item-subtitle">
-                    ${escapeHtml(vm.zone)}${vm.privateIp ? ' • ' + vm.privateIp : ''}
+                    ${escapeHtml(vm.zone)} • ${escapeHtml(vm.machineType || 'unknown')}
                 </div>
             </div>
         `;
     }).join('');
     
-    // Add click handlers
     elements.vmsList.querySelectorAll('.list-item').forEach(item => {
-        item.addEventListener('click', () => selectVM(item.dataset.vmName, item.dataset.vmZone, item.dataset.vmStatus));
+        item.addEventListener('click', () => selectVM(
+            item.dataset.vmName, 
+            item.dataset.vmZone, 
+            item.dataset.vmStatus,
+            item.dataset.vmMachineType,
+            item.dataset.vmIsWindows === 'true'
+        ));
     });
-    
-    // Scroll selected VM into view
-    scrollSelectedIntoView(elements.vmsList);
 }
 
-// Select a VM
-function selectVM(vmName, vmZone, vmStatus) {
-    state.selectedVM = { name: vmName, zone: vmZone, status: vmStatus };
+function selectVM(vmName, vmZone, vmStatus, machineType, isWindows) {
+    state.newConnection.vm = { 
+        name: vmName, 
+        zone: vmZone, 
+        status: vmStatus,
+        machineType: machineType,
+        isWindows: isWindows
+    };
     
-    // Update UI
-    elements.selectedVM.textContent = vmName;
-    elements.selectedZone.textContent = vmZone;
+    elements.summaryVm.textContent = vmName;
+    elements.summaryZone.textContent = vmZone;
     
-    // Re-render VMs to show selection
     renderVMs(state.vms);
-    
-    // Save as last connection
-    saveLastConnection();
-    
-    // Update favorite button
-    updateFavoriteButton();
-    
     updateButtons();
 }
 
-// Load tunnels from backend
+// ==================== Tunnels ====================
+
 async function loadTunnels() {
     try {
         const tunnels = await window.go.main.App.GetTunnels();
         state.tunnels = tunnels || [];
-        renderTunnelsList();
+        
+        if (state.selectedConnection) {
+            updateConnectionStatus();
+        }
+        renderConnectionsList();
     } catch (error) {
         console.error('Failed to load tunnels:', error);
     }
 }
 
-// Render tunnels list
-function renderTunnelsList() {
-    if (!state.tunnels || state.tunnels.length === 0) {
-        elements.tunnelsList.innerHTML = '<div class="tunnels-empty">No active tunnels</div>';
-        elements.selectedTunnelPanel.style.display = 'none';
-        return;
-    }
-    
-    elements.tunnelsList.innerHTML = state.tunnels.map(tunnel => `
-        <div class="tunnel-item ${state.selectedTunnel?.id === tunnel.id ? 'selected' : ''}" 
-             data-tunnel-id="${tunnel.id}">
-            <div class="tunnel-item-info">
-                <span class="tunnel-item-name">${escapeHtml(tunnel.vmName)}</span>
-                <span class="tunnel-item-address">localhost:${tunnel.localPort}</span>
-            </div>
-            <span class="tunnel-item-status ${tunnel.status}">${tunnel.status}</span>
-        </div>
-    `).join('');
-    
-    // Add click handlers
-    elements.tunnelsList.querySelectorAll('.tunnel-item').forEach(item => {
-        item.addEventListener('click', () => selectTunnel(item.dataset.tunnelId));
-    });
-}
-
-// Select a tunnel from the list
-function selectTunnel(tunnelId) {
-    const tunnel = state.tunnels.find(t => t.id === tunnelId);
-    if (!tunnel) return;
-    
-    state.selectedTunnel = tunnel;
-    
-    // Update selected tunnel panel
-    elements.selectedTunnelPanel.style.display = 'block';
-    elements.tunnelVmName.textContent = `${tunnel.vmName} (${tunnel.zone})`;
-    elements.tunnelAddress.textContent = `localhost:${tunnel.localPort}`;
-    elements.tunnelStatus.textContent = tunnel.status;
-    elements.tunnelStatus.className = `tunnel-status-badge ${tunnel.status}`;
-    
-    // Update logs
-    updateLogsUI(tunnel);
-    
-    // Re-render list to show selection
-    renderTunnelsList();
-    
-    updateButtons();
-}
-
-// Update buttons state
-function updateButtons() {
-    const canStart = state.selectedProject && state.selectedVM;
-    const hasSelectedTunnel = state.selectedTunnel !== null;
-    const tunnelIsActive = hasSelectedTunnel && 
-        (state.selectedTunnel.status === 'running' || state.selectedTunnel.status === 'starting');
-    const tunnelIsRunning = hasSelectedTunnel && state.selectedTunnel.status === 'running';
-    const tunnelIsStopped = hasSelectedTunnel && 
-        (state.selectedTunnel.status === 'stopped' || state.selectedTunnel.status === 'error');
-    
-    // Start buttons
-    elements.startTunnelBtn.disabled = !canStart;
-    elements.startTunnelBookmarkBtn.disabled = !canStart || !state.windowsAppInstalled;
-    elements.openWindowsAppBtn.disabled = !state.windowsAppInstalled;
-    
-    // Selected tunnel buttons
-    elements.stopTunnelBtn.disabled = !tunnelIsActive;
-    elements.copyAddressBtn.disabled = !tunnelIsRunning;
-    elements.removeTunnelBtn.disabled = !tunnelIsStopped;
-    
-    // Update tooltip for bookmark button when Windows App not installed
-    if (!state.windowsAppInstalled) {
-        elements.startTunnelBookmarkBtn.title = 'Windows App not installed - Install from Mac App Store';
-    } else {
-        elements.startTunnelBookmarkBtn.title = 'Start tunnel and create Windows App bookmark';
-    }
-}
-
-// Start tunnel
 async function startTunnel() {
-    if (!state.selectedProject || !state.selectedVM) {
-        showToast('Please select a project and VM first', 'error');
-        return;
-    }
+    if (!state.selectedConnection || state.isStartingTunnel) return;
     
+    state.isStartingTunnel = true;
     elements.startTunnelBtn.disabled = true;
     elements.startTunnelBtn.textContent = 'Starting...';
     
     try {
-        const tunnel = await window.go.main.App.StartTunnel(
-            state.selectedProject.id,
-            state.selectedVM.name,
-            state.selectedVM.zone,
-            0 // Auto-select port
-        );
+        // Use the connection's fixed port
+        const tunnel = await window.go.main.App.StartTunnelForConnection(state.selectedConnection.id);
         
-        // Add to tunnels list and select it
         state.tunnels.unshift(tunnel);
         state.selectedTunnel = tunnel;
-        renderTunnelsList();
-        selectTunnel(tunnel.id);
-        
+        updateConnectionStatus();
+        renderConnectionsList();
         showToast(`Tunnel started on port ${tunnel.localPort}`, 'success');
     } catch (error) {
-        showToast('Failed to start tunnel: ' + error.message, 'error');
+        const errorMsg = error?.message || String(error) || 'Unknown error';
+        showToast('Failed to start tunnel: ' + errorMsg, 'error');
     } finally {
+        state.isStartingTunnel = false;
         elements.startTunnelBtn.textContent = 'Start Tunnel';
         updateButtons();
     }
 }
 
-// Start tunnel with Windows App bookmark
-async function startTunnelWithBookmark() {
-    if (!state.selectedProject || !state.selectedVM) {
-        showToast('Please select a project and VM first', 'error');
-        return;
-    }
-    
-    if (!state.windowsAppInstalled) {
-        showToast('Windows App is not installed', 'error');
-        return;
-    }
-    
-    elements.startTunnelBookmarkBtn.disabled = true;
-    elements.startTunnelBookmarkBtn.textContent = 'Starting...';
-    
-    try {
-        const tunnel = await window.go.main.App.StartTunnelWithBookmark(
-            state.selectedProject.id,
-            state.selectedVM.name,
-            state.selectedVM.zone,
-            0 // Auto-select port
-        );
-        
-        // Add to tunnels list and select it
-        state.tunnels.unshift(tunnel);
-        state.selectedTunnel = tunnel;
-        renderTunnelsList();
-        selectTunnel(tunnel.id);
-        
-        if (tunnel.bookmarkId) {
-            showToast(`Tunnel started on port ${tunnel.localPort} with bookmark`, 'success');
-        } else {
-            showToast(`Tunnel started on port ${tunnel.localPort} (bookmark may have failed)`, 'success');
-        }
-    } catch (error) {
-        showToast('Failed to start tunnel: ' + error.message, 'error');
-    } finally {
-        elements.startTunnelBookmarkBtn.textContent = 'Start + Bookmark';
-        updateButtons();
-    }
-}
-
-// Stop selected tunnel
 async function stopTunnel() {
-    if (!state.selectedTunnel) return;
+    if (!state.selectedConnection) return;
+    
+    const activeTunnel = getActiveConnectionTunnel(state.selectedConnection);
+    if (!activeTunnel) return;
     
     elements.stopTunnelBtn.disabled = true;
     elements.stopTunnelBtn.textContent = 'Stopping...';
     
     try {
-        await window.go.main.App.StopTunnel(state.selectedTunnel.id);
+        await window.go.main.App.StopTunnel(activeTunnel.id);
         
-        // Update tunnel status locally
-        state.selectedTunnel.status = 'stopped';
-        const tunnelIndex = state.tunnels.findIndex(t => t.id === state.selectedTunnel.id);
-        if (tunnelIndex >= 0) {
-            state.tunnels[tunnelIndex].status = 'stopped';
+        const idx = state.tunnels.findIndex(t => t.id === activeTunnel.id);
+        if (idx >= 0) {
+            state.tunnels[idx].status = 'stopped';
         }
         
-        renderTunnelsList();
-        selectTunnel(state.selectedTunnel.id);
-        
+        updateConnectionStatus();
+        renderConnectionsList();
         showToast('Tunnel stopped', 'success');
     } catch (error) {
         showToast('Failed to stop tunnel: ' + error.message, 'error');
     } finally {
-        elements.stopTunnelBtn.textContent = 'Stop';
+        elements.stopTunnelBtn.textContent = 'Stop Tunnel';
         updateButtons();
     }
 }
 
-// Remove selected tunnel from list
-async function removeTunnel() {
-    if (!state.selectedTunnel) return;
-    
-    try {
-        await window.go.main.App.RemoveTunnel(state.selectedTunnel.id);
-        
-        // Remove from local list
-        state.tunnels = state.tunnels.filter(t => t.id !== state.selectedTunnel.id);
-        state.selectedTunnel = null;
-        
-        renderTunnelsList();
-        elements.selectedTunnelPanel.style.display = 'none';
-        elements.logsContainer.innerHTML = '<div class="log-placeholder">Select a tunnel to view logs...</div>';
-        
-        showToast('Tunnel removed', 'success');
-    } catch (error) {
-        showToast('Failed to remove tunnel: ' + error.message, 'error');
-    }
-    
-    updateButtons();
-}
-
-// Clear all stopped tunnels
-async function clearStoppedTunnels() {
-    try {
-        const count = await window.go.main.App.ClearStoppedTunnels();
-        
-        // Reload tunnels
-        await loadTunnels();
-        
-        // Clear selection if it was removed
-        if (state.selectedTunnel && !state.tunnels.find(t => t.id === state.selectedTunnel.id)) {
-            state.selectedTunnel = null;
-            elements.selectedTunnelPanel.style.display = 'none';
-            elements.logsContainer.innerHTML = '<div class="log-placeholder">Select a tunnel to view logs...</div>';
-        }
-        
-        if (count > 0) {
-            showToast(`Removed ${count} stopped tunnel(s)`, 'success');
-        } else {
-            showToast('No stopped tunnels to remove', 'info');
-        }
-    } catch (error) {
-        showToast('Failed to clear tunnels: ' + error.message, 'error');
-    }
-    
-    updateButtons();
-}
-
-// Stop all running tunnels
 async function stopAllTunnels() {
     const activeTunnels = state.tunnels.filter(t => t.status === 'running' || t.status === 'starting');
     if (activeTunnels.length === 0) {
@@ -912,19 +741,7 @@ async function stopAllTunnels() {
     
     try {
         const count = await window.go.main.App.StopAllTunnels();
-        
-        // Reload tunnels
         await loadTunnels();
-        
-        // Update selected tunnel if it exists
-        if (state.selectedTunnel) {
-            const updatedTunnel = state.tunnels.find(t => t.id === state.selectedTunnel.id);
-            if (updatedTunnel) {
-                state.selectedTunnel = updatedTunnel;
-                selectTunnel(state.selectedTunnel.id);
-            }
-        }
-        
         showToast(`Stopped ${count} tunnel(s)`, 'success');
     } catch (error) {
         showToast('Failed to stop tunnels: ' + error.message, 'error');
@@ -934,11 +751,12 @@ async function stopAllTunnels() {
     }
 }
 
-// Copy RDP address for selected tunnel
-function copyRDPAddress() {
-    if (!state.selectedTunnel || state.selectedTunnel.status !== 'running') return;
+
+function copyAddress() {
+    if (!state.selectedConnection) return;
     
-    const address = `localhost:${state.selectedTunnel.localPort}`;
+    // Always use the connection's fixed port
+    const address = `localhost:${state.selectedConnection.localPort}`;
     navigator.clipboard.writeText(address).then(() => {
         showToast(`Copied: ${address}`, 'success');
     }).catch(() => {
@@ -946,24 +764,355 @@ function copyRDPAddress() {
     });
 }
 
-// Open Windows App
-async function openWindowsApp() {
-    if (!state.windowsAppInstalled) {
-        showToast('Windows App is not installed', 'error');
-        return;
-    }
+// ==================== Menu Actions ====================
+
+function createWindowsAppBookmark() {
+    if (!state.selectedConnection || !state.windowsAppInstalled) return;
+    hideOverflowMenu();
+    showBookmarkModal();
+}
+
+// ==================== Bookmark Modal ====================
+
+function showBookmarkModal() {
+    if (!state.selectedConnection) return;
     
-    try {
-        await window.go.main.App.OpenWindowsApp();
-        showToast('Opening Windows App...', 'success');
-    } catch (error) {
-        showToast('Failed to open Windows App: ' + error.message, 'error');
+    // Set the address
+    elements.bookmarkAddress.textContent = `localhost:${state.selectedConnection.localPort}`;
+    
+    // Reset form
+    elements.bookmarkWithPassword.checked = false;
+    elements.bookmarkPasswordOptions.classList.add('hidden');
+    elements.bookmarkUsername.value = state.selectedConnection.username || 'Administrator';
+    elements.bookmarkSaveKeychain.checked = true;
+    
+    elements.bookmarkModal.classList.remove('hidden');
+}
+
+function hideBookmarkModal() {
+    elements.bookmarkModal.classList.add('hidden');
+}
+
+async function executeBookmarkCreation() {
+    if (!state.selectedConnection) return;
+    
+    const withPassword = elements.bookmarkWithPassword.checked;
+    const port = state.selectedConnection.localPort;
+    
+    hideBookmarkModal();
+    
+    if (withPassword) {
+        // Generate password and create bookmark with credentials
+        const username = elements.bookmarkUsername.value.trim() || 'Administrator';
+        const saveToKeychain = elements.bookmarkSaveKeychain.checked;
+        
+        showLoadingModal('Generating Windows password...\nThis may take up to 90 seconds.');
+        
+        try {
+            const result = await window.go.main.App.GenerateWindowsPassword({
+                connectionId: state.selectedConnection.id,
+                username: username,
+                saveToKeychain: saveToKeychain,
+                updateBookmark: true // Always update bookmark since that's the purpose
+            });
+            
+            hideLoadingModal();
+            
+            if (result.success) {
+                // Store password temporarily for display
+                generatedPassword = result.password;
+                
+                // Update connection state
+                state.selectedConnection.username = result.username;
+                state.selectedConnection.hasBookmark = true;
+                state.selectedConnection.bookmarkHasCreds = result.bookmarkUpdated;
+                
+                // Update the connection in the list
+                const connIndex = state.connections.findIndex(c => c.id === state.selectedConnection.id);
+                if (connIndex >= 0) {
+                    state.connections[connIndex].username = result.username;
+                    state.connections[connIndex].hasBookmark = true;
+                    state.connections[connIndex].bookmarkHasCreds = result.bookmarkUpdated;
+                }
+                
+                // Update UI
+                const detailUsername = document.getElementById('detail-username');
+                if (detailUsername) {
+                    detailUsername.textContent = result.username;
+                }
+                updateBookmarkStatusDisplay(state.selectedConnection);
+                
+                // Show result modal
+                showPasswordResultModal(result);
+            } else {
+                showToast('Failed to generate password: ' + result.error, 'error');
+            }
+        } catch (error) {
+            hideLoadingModal();
+            const errorMsg = error?.message || String(error) || 'Unknown error';
+            showToast('Failed to generate password: ' + errorMsg, 'error');
+        }
+    } else {
+        // Create bookmark without credentials
+        try {
+            const result = await window.go.main.App.CreateWindowsAppBookmark(
+                state.selectedConnection.projectId,
+                state.selectedConnection.vmName,
+                state.selectedConnection.zone,
+                port
+            );
+            
+            if (result.success) {
+                // Update connection state (bookmark without credentials)
+                state.selectedConnection.hasBookmark = true;
+                
+                // Update the connection in the list
+                const connIndex = state.connections.findIndex(c => c.id === state.selectedConnection.id);
+                if (connIndex >= 0) {
+                    state.connections[connIndex].hasBookmark = true;
+                }
+                
+                // Update bookmark status in backend
+                try {
+                    await window.go.main.App.UpdateConnectionBookmarkStatus(
+                        state.selectedConnection.id,
+                        true,
+                        false // no credentials
+                    );
+                } catch (e) {
+                    console.error('Failed to update bookmark status:', e);
+                }
+                
+                updateBookmarkStatusDisplay(state.selectedConnection);
+                showToast('Windows App bookmark created', 'success');
+            } else {
+                showToast('Failed to create bookmark: ' + result.error, 'error');
+            }
+        } catch (error) {
+            const errorMsg = error?.message || String(error) || 'Unknown error';
+            showToast('Failed to create bookmark: ' + errorMsg, 'error');
+        }
     }
 }
 
-// Update logs UI for a tunnel
+// ==================== Password Generation ====================
+
+let generatedPassword = ''; // Temporary storage for the generated password
+
+function showPasswordModal() {
+    if (!state.selectedConnection) return;
+    
+    hideOverflowMenu();
+    
+    // Pre-fill username from connection or default to Administrator
+    elements.passwordUsername.value = state.selectedConnection.username || 'Administrator';
+    
+    // Reset checkboxes
+    elements.passwordSaveKeychain.checked = true;
+    elements.passwordUpdateBookmark.checked = state.windowsAppInstalled;
+    
+    // Handle Windows App availability
+    if (!state.windowsAppInstalled) {
+        elements.passwordUpdateBookmark.disabled = true;
+        elements.passwordUpdateBookmark.checked = false;
+        elements.bookmarkWarning.classList.remove('hidden');
+    } else {
+        elements.passwordUpdateBookmark.disabled = false;
+        elements.bookmarkWarning.classList.add('hidden');
+    }
+    
+    elements.passwordModal.classList.remove('hidden');
+}
+
+function hidePasswordModal() {
+    elements.passwordModal.classList.add('hidden');
+}
+
+function showLoadingModal(message) {
+    elements.loadingMessage.textContent = message;
+    elements.loadingModal.classList.remove('hidden');
+}
+
+function hideLoadingModal() {
+    elements.loadingModal.classList.add('hidden');
+}
+
+function showPasswordResultModal(result) {
+    generatedPassword = result.password;
+    
+    elements.resultUsername.textContent = result.username;
+    elements.resultPassword.textContent = '••••••••••••';
+    elements.resultPassword.dataset.password = result.password;
+    
+    // Show/hide status items
+    if (result.keychainSaved) {
+        elements.resultKeychain.classList.remove('hidden');
+    } else {
+        elements.resultKeychain.classList.add('hidden');
+    }
+    
+    if (result.bookmarkUpdated) {
+        elements.resultBookmark.classList.remove('hidden');
+    } else {
+        elements.resultBookmark.classList.add('hidden');
+    }
+    
+    elements.passwordResultModal.classList.remove('hidden');
+}
+
+function hidePasswordResultModal() {
+    elements.passwordResultModal.classList.add('hidden');
+    // Clear password from memory
+    generatedPassword = '';
+    elements.resultPassword.textContent = '••••••••••••';
+    elements.resultPassword.dataset.password = '';
+}
+
+function togglePasswordVisibility() {
+    const passwordEl = elements.resultPassword;
+    if (passwordEl.textContent === '••••••••••••') {
+        passwordEl.textContent = passwordEl.dataset.password;
+    } else {
+        passwordEl.textContent = '••••••••••••';
+    }
+}
+
+async function generateWindowsPassword() {
+    showPasswordModal();
+}
+
+async function executePasswordGeneration() {
+    if (!state.selectedConnection) return;
+    
+    const username = elements.passwordUsername.value.trim() || 'Administrator';
+    const saveToKeychain = elements.passwordSaveKeychain.checked;
+    const updateBookmark = elements.passwordUpdateBookmark.checked && state.windowsAppInstalled;
+    
+    // No need to check for running tunnel - we use the connection's fixed port
+    
+    hidePasswordModal();
+    showLoadingModal('Generating Windows password...\nThis may take up to 90 seconds.');
+    
+    try {
+        const result = await window.go.main.App.GenerateWindowsPassword({
+            connectionId: state.selectedConnection.id,
+            username: username,
+            saveToKeychain: saveToKeychain,
+            updateBookmark: updateBookmark
+        });
+        
+        hideLoadingModal();
+        
+        if (result.success) {
+            // Update local connection state
+            state.selectedConnection.username = result.username;
+            if (result.bookmarkUpdated) {
+                state.selectedConnection.hasBookmark = true;
+                state.selectedConnection.bookmarkHasCreds = true;
+            }
+            
+            // Update the connection in the list
+            const connIndex = state.connections.findIndex(c => c.id === state.selectedConnection.id);
+            if (connIndex >= 0) {
+                state.connections[connIndex].username = result.username;
+                if (result.bookmarkUpdated) {
+                    state.connections[connIndex].hasBookmark = true;
+                    state.connections[connIndex].bookmarkHasCreds = true;
+                }
+            }
+            
+            // Update UI
+            const detailUsername = document.getElementById('detail-username');
+            if (detailUsername) {
+                detailUsername.textContent = result.username;
+            }
+            updateBookmarkStatusDisplay(state.selectedConnection);
+            
+            showPasswordResultModal(result);
+        } else {
+            showToast('Failed to generate password: ' + result.error, 'error');
+        }
+    } catch (error) {
+        hideLoadingModal();
+        showToast('Failed to generate password: ' + error.message, 'error');
+    }
+}
+
+function copyCredential(elementId) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    let text = element.textContent;
+    // For password, use the stored value if it's masked
+    if (elementId === 'result-password' && text === '••••••••••••') {
+        text = element.dataset.password;
+    }
+    
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy', 'error');
+    });
+}
+
+// ==================== UI Helpers ====================
+
+function showView(view) {
+    state.currentView = view;
+    
+    elements.connectionDetailsView.classList.add('hidden');
+    elements.newConnectionView.classList.add('hidden');
+    elements.emptyStateView.classList.add('hidden');
+    
+    switch (view) {
+        case 'details':
+            elements.connectionDetailsView.classList.remove('hidden');
+            break;
+        case 'new':
+            elements.newConnectionView.classList.remove('hidden');
+            break;
+        case 'empty':
+            elements.emptyStateView.classList.remove('hidden');
+            break;
+    }
+}
+
+function updateButtons() {
+    // Open Windows App button
+    elements.openWindowsAppBtn.disabled = !state.windowsAppInstalled;
+    elements.openWindowsAppBtn.title = state.windowsAppInstalled ? 'Open Windows App' : 'Windows App not installed';
+    
+    // Global tunnel buttons
+    const hasActiveTunnels = state.tunnels.some(t => t.status === 'running' || t.status === 'starting');
+    elements.stopAllBtn.disabled = !hasActiveTunnels;
+    
+    // Details view buttons
+    if (state.selectedConnection) {
+        const activeTunnel = getActiveConnectionTunnel(state.selectedConnection);
+        const hasActive = activeTunnel != null;
+        
+        elements.startTunnelBtn.disabled = state.isStartingTunnel || hasActive;
+        elements.stopTunnelBtn.disabled = !hasActive;
+        elements.copyAddressBtn.disabled = false; // Always enabled - port is fixed
+        
+        // Menu items
+        elements.menuCreateBookmark.disabled = !state.windowsAppInstalled;
+    }
+    
+    // New connection form
+    const canSave = state.newConnection.project && state.newConnection.vm && state.newConnection.vm.isWindows;
+    elements.saveConnectionBtn.disabled = !canSave;
+    
+    // Update save button tooltip
+    if (state.newConnection.vm && !state.newConnection.vm.isWindows) {
+        elements.saveConnectionBtn.title = 'Only Windows VMs can be saved';
+    } else {
+        elements.saveConnectionBtn.title = '';
+    }
+}
+
 function updateLogsUI(tunnel) {
-    if (!tunnel || !tunnel.logs || tunnel.logs.length === 0) {
+    if (!tunnel?.logs?.length) {
         elements.logsContainer.innerHTML = '<div class="log-placeholder">No logs yet...</div>';
         return;
     }
@@ -974,108 +1123,141 @@ function updateLogsUI(tunnel) {
     elements.logsContainer.scrollTop = elements.logsContainer.scrollHeight;
 }
 
-// Poll for tunnel status updates
+function toggleOverflowMenu() {
+    elements.overflowMenu.classList.toggle('hidden');
+}
+
+function hideOverflowMenu() {
+    elements.overflowMenu.classList.add('hidden');
+}
+
 function startStatusPolling() {
     setInterval(async () => {
-        // Only poll if we have tunnels
-        if (state.tunnels.length === 0) return;
+        if (state.tunnels.length === 0 && !state.selectedConnection) return;
         
         try {
             const tunnels = await window.go.main.App.GetTunnels();
             state.tunnels = tunnels || [];
             
-            // Update selected tunnel if it still exists
-            if (state.selectedTunnel) {
-                const updatedTunnel = state.tunnels.find(t => t.id === state.selectedTunnel.id);
-                if (updatedTunnel) {
-                    state.selectedTunnel = updatedTunnel;
-                    
-                    // Update selected tunnel panel
-                    elements.tunnelStatus.textContent = updatedTunnel.status;
-                    elements.tunnelStatus.className = `tunnel-status-badge ${updatedTunnel.status}`;
-                    
-                    // Update logs
-                    updateLogsUI(updatedTunnel);
-                } else {
-                    // Tunnel was removed
-                    state.selectedTunnel = null;
-                    elements.selectedTunnelPanel.style.display = 'none';
-                }
+            if (state.selectedConnection) {
+                updateConnectionStatus();
             }
-            
-            renderTunnelsList();
+            renderConnectionsList();
             updateButtons();
         } catch (error) {
-            console.error('Failed to poll tunnel status:', error);
+            console.error('Polling error:', error);
         }
     }, 1000);
 }
 
-// Setup event listeners
+// ==================== Event Listeners ====================
+
 function setupEventListeners() {
-    // Auth button
+    // Auth
     elements.authBtn.addEventListener('click', runAuthentication);
     
-    // Project search with debounce
-    let projectSearchTimeout;
-    elements.projectSearch.addEventListener('input', (e) => {
-        clearTimeout(projectSearchTimeout);
-        projectSearchTimeout = setTimeout(() => {
-            loadProjects(e.target.value);
-        }, 300);
-    });
-    
-    // VM search with debounce
-    let vmSearchTimeout;
-    elements.vmSearch.addEventListener('input', (e) => {
-        if (!state.selectedProject) return;
-        clearTimeout(vmSearchTimeout);
-        vmSearchTimeout = setTimeout(() => {
-            loadVMs(state.selectedProject.id, e.target.value);
-        }, 300);
-    });
-    
-    // Favorite button
-    elements.toggleFavoriteBtn.addEventListener('click', toggleFavorite);
-    
-    // Start tunnel buttons
-    elements.startTunnelBtn.addEventListener('click', startTunnel);
-    elements.startTunnelBookmarkBtn.addEventListener('click', startTunnelWithBookmark);
+    // Top bar
     elements.openWindowsAppBtn.addEventListener('click', openWindowsApp);
     
-    // Selected tunnel actions
+    // Connections panel
+    elements.newConnectionBtn.addEventListener('click', showNewConnectionForm);
+    
+    // Details view
+    elements.menuBtn.addEventListener('click', toggleOverflowMenu);
+    elements.menuCreateBookmark.addEventListener('click', createWindowsAppBookmark);
+    elements.menuGeneratePassword.addEventListener('click', generateWindowsPassword);
+    elements.menuDeleteConnection.addEventListener('click', deleteConnection);
+    elements.startTunnelBtn.addEventListener('click', startTunnel);
     elements.stopTunnelBtn.addEventListener('click', stopTunnel);
-    elements.copyAddressBtn.addEventListener('click', copyRDPAddress);
-    elements.removeTunnelBtn.addEventListener('click', removeTunnel);
-    
-    // Tunnel list actions
-    elements.stopAllBtn.addEventListener('click', stopAllTunnels);
-    elements.clearStoppedBtn.addEventListener('click', clearStoppedTunnels);
-    
-    // Clear logs
+    elements.copyAddressBtn.addEventListener('click', copyAddress);
     elements.clearLogsBtn.addEventListener('click', () => {
         elements.logsContainer.innerHTML = '<div class="log-placeholder">Logs cleared...</div>';
     });
+    
+    // New connection view
+    elements.cancelConnectionBtn.addEventListener('click', cancelNewConnection);
+    elements.saveConnectionBtn.addEventListener('click', saveConnection);
+    
+    // Panel footer buttons
+    elements.stopAllBtn.addEventListener('click', stopAllTunnels);
+    
+    // Project search
+    let projectSearchTimeout;
+    elements.projectSearch.addEventListener('input', (e) => {
+        clearTimeout(projectSearchTimeout);
+        projectSearchTimeout = setTimeout(() => loadProjects(e.target.value), 300);
+    });
+    
+    // VM search
+    let vmSearchTimeout;
+    elements.vmSearch.addEventListener('input', (e) => {
+        if (!state.newConnection.project) return;
+        clearTimeout(vmSearchTimeout);
+        vmSearchTimeout = setTimeout(() => loadVMs(state.newConnection.project.id, e.target.value), 300);
+    });
+    
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!elements.menuBtn.contains(e.target) && !elements.overflowMenu.contains(e.target)) {
+            hideOverflowMenu();
+        }
+    });
+    
+    // Password modal events
+    elements.passwordModalClose.addEventListener('click', hidePasswordModal);
+    elements.passwordCancelBtn.addEventListener('click', hidePasswordModal);
+    elements.passwordGenerateBtn.addEventListener('click', executePasswordGeneration);
+    elements.passwordModal.querySelector('.modal-backdrop').addEventListener('click', hidePasswordModal);
+    
+    // Password result modal events
+    elements.passwordDoneBtn.addEventListener('click', hidePasswordResultModal);
+    elements.togglePasswordBtn.addEventListener('click', togglePasswordVisibility);
+    elements.passwordResultModal.querySelector('.modal-backdrop').addEventListener('click', hidePasswordResultModal);
+    
+    // Copy buttons
+    document.querySelectorAll('.btn-copy').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.dataset.copy;
+            if (targetId) {
+                copyCredential(targetId);
+            }
+        });
+    });
+    
+    // Confirm modal events
+    elements.confirmCancelBtn.addEventListener('click', () => hideConfirm(false));
+    elements.confirmOkBtn.addEventListener('click', () => hideConfirm(true));
+    elements.confirmModal.querySelector('.modal-backdrop').addEventListener('click', () => hideConfirm(false));
+    
+    // Bookmark modal events
+    elements.bookmarkModalClose.addEventListener('click', hideBookmarkModal);
+    elements.bookmarkCancelBtn.addEventListener('click', hideBookmarkModal);
+    elements.bookmarkCreateBtn.addEventListener('click', executeBookmarkCreation);
+    elements.bookmarkModal.querySelector('.modal-backdrop').addEventListener('click', hideBookmarkModal);
+    elements.bookmarkWithPassword.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            elements.bookmarkPasswordOptions.classList.remove('hidden');
+        } else {
+            elements.bookmarkPasswordOptions.classList.add('hidden');
+        }
+    });
 }
 
-// Show toast notification
+// ==================== Utilities ====================
+
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        toast.remove();
-    }, 3000);
+    setTimeout(() => toast.remove(), 3000);
 }
 
-// Escape HTML to prevent XSS
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// Initialize when DOM is ready
+// Initialize
 document.addEventListener('DOMContentLoaded', init);
