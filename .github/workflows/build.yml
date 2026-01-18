@@ -57,9 +57,26 @@ jobs:
           APP_NAME="IAP Tunnel Manager"
           DMG_NAME="IAP-Tunnel-Manager-macOS-${{ matrix.platform.arch }}"
           
+          # Remove quarantine attributes (helps with Gatekeeper issues)
+          xattr -cr "build/bin/${APP_NAME}.app"
+          
           # Create a temporary directory for DMG contents
           mkdir -p dmg-contents
           cp -R "build/bin/${APP_NAME}.app" dmg-contents/
+          
+          # Add a README for users about Gatekeeper
+          cat > dmg-contents/README.txt << 'EOF'
+          IAP Tunnel Manager
+          ==================
+          
+          If macOS shows "damaged and can't be opened" error:
+          
+          1. Open Terminal
+          2. Run: xattr -cr "/Applications/IAP Tunnel Manager.app"
+          3. Try opening the app again
+          
+          This happens because the app is not signed with an Apple Developer certificate.
+          EOF
           
           # Create DMG
           hdiutil create -volname "${APP_NAME}" \
@@ -119,8 +136,27 @@ jobs:
           APP_NAME="IAP Tunnel Manager"
           DMG_NAME="IAP-Tunnel-Manager-macOS-universal"
           
+          # Remove quarantine attributes
+          xattr -cr "${APP_NAME}.app"
+          
           mkdir -p dmg-contents
           cp -R "${APP_NAME}.app" dmg-contents/
+          
+          # Add README
+          cat > dmg-contents/README.txt << 'EOF'
+          IAP Tunnel Manager (Universal Binary)
+          =====================================
+          
+          This version works on both Apple Silicon (M1/M2/M3) and Intel Macs.
+          
+          If macOS shows "damaged and can't be opened" error:
+          
+          1. Open Terminal
+          2. Run: xattr -cr "/Applications/IAP Tunnel Manager.app"
+          3. Try opening the app again
+          
+          This happens because the app is not signed with an Apple Developer certificate.
+          EOF
           
           hdiutil create -volname "${APP_NAME}" \
             -srcfolder dmg-contents \
