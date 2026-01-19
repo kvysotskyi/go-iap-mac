@@ -133,18 +133,18 @@ async function init() {
 
 async function checkAuth() {
     try {
-        // First check if gcloud is installed
-        const gcloudInfo = await window.go.main.App.FindGcloud();
-        if (!gcloudInfo.found) {
-            showGcloudMissing();
-            elements.connectionStatus.classList.add('disconnected');
-            return false;
-        }
-        
-        // Then check authentication
+        // Check authentication first (ADC can work without gcloud being in PATH)
         const result = await window.go.main.App.CheckAuth();
         if (!result.authenticated) {
-            showAuthError(result.error);
+            // Auth failed - check if gcloud is available for re-authentication
+            const gcloudInfo = await window.go.main.App.FindGcloud();
+            if (!gcloudInfo.found) {
+                // gcloud not found - show install prompt
+                showGcloudMissing();
+            } else {
+                // gcloud found but not authenticated - show auth button
+                showAuthError(result.error);
+            }
             elements.connectionStatus.classList.add('disconnected');
             return false;
         } else {
