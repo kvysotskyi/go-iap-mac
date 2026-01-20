@@ -52,6 +52,15 @@ jobs:
         run: |
           wails build -platform darwin/${{ matrix.platform.arch }}
 
+      - name: Ad-hoc sign application
+        run: |
+          APP_NAME="IAP Tunnel Manager"
+          # Sign all nested components first, then the main app
+          find "build/bin/${APP_NAME}.app" -type f -perm +111 -exec codesign --force --deep --sign - {} \; 2>/dev/null || true
+          codesign --force --deep --sign - "build/bin/${APP_NAME}.app"
+          # Verify the signature
+          codesign --verify --verbose "build/bin/${APP_NAME}.app"
+
       - name: Create DMG
         run: |
           APP_NAME="IAP Tunnel Manager"
@@ -153,6 +162,15 @@ jobs:
           
           # Verify universal binary
           file "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+
+      - name: Ad-hoc sign universal binary
+        run: |
+          APP_NAME="IAP Tunnel Manager"
+          # Sign all nested components first, then the main app
+          find "${APP_NAME}.app" -type f -perm +111 -exec codesign --force --deep --sign - {} \; 2>/dev/null || true
+          codesign --force --deep --sign - "${APP_NAME}.app"
+          # Verify the signature
+          codesign --verify --verbose "${APP_NAME}.app"
 
       - name: Create Universal DMG
         run: |
