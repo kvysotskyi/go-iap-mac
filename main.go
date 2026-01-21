@@ -33,11 +33,12 @@ func main() {
 		},
 		Mac: &mac.Options{
 			TitleBar: &mac.TitleBar{
-				TitlebarAppearsTransparent: true,
+				TitlebarAppearsTransparent: false,
 				HideTitle:                  false,
 				HideTitleBar:               false,
 				FullSizeContent:            true,
 				UseToolbar:                 false,
+				HideToolbarSeparator:       true,
 			},
 			About: &mac.AboutInfo{
 				Title:   "IAP Tunnel Manager",
