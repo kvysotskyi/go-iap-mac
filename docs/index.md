@@ -35,7 +35,7 @@ On first launch, macOS Gatekeeper will block the application because it is not c
 
 This is a one-time step. The app will launch normally on subsequent runs.
 
-![macOS Gatekeeper security warning for IAP Tunnel Manager on macOS](docs/screenshots/allowinsecurity.png)
+![macOS Gatekeeper security warning for IAP Tunnel Manager on macOS](screenshots/allowinsecurity.png)
 
 ## First launch & authentication
 
@@ -57,13 +57,13 @@ The app reads Application Default Credentials (ADC) from `gcloud`. If authentica
 
 The main window displays all Google Cloud projects accessible to your account. Use the search box to filter projects by name or ID.
 
-![IAP Tunnel Manager main window showing project selection and VM list on macOS](docs/screenshots/mainWindow.png)
+![IAP Tunnel Manager main window showing project selection and VM list on macOS](screenshots/mainWindow.png)
 
 ### VM list
 
 After selecting a project, the app lists all Compute Engine VM instances across all zones. The list shows VM name, zone, status, and machine type. Windows VMs are automatically detected.
 
-![IAP Tunnel Manager configuration window showing VM list and connection options](docs/screenshots/mainConfig.png)
+![IAP Tunnel Manager configuration window showing VM list and connection options](screenshots/mainConfig.png)
 
 ### RDP / SSH selection
 
@@ -76,9 +76,9 @@ For each VM, you can choose the connection type:
 
 For Windows VMs, the app can generate and reset Windows passwords using the Compute Engine guest agent. Passwords can be saved to macOS Keychain for secure storage.
 
-![IAP Tunnel Manager creating Windows App bookmark with RDP connection](docs/screenshots/createWindowsAppBookmark.png)
+![IAP Tunnel Manager creating Windows App bookmark with RDP connection](screenshots/createWindowsAppBookmark.png)
 
-![IAP Tunnel Manager bookmark creation window with password generation options](docs/screenshots/Bookmarkcreatewindow.png)
+![IAP Tunnel Manager bookmark creation window with password generation options](screenshots/Bookmarkcreatewindow.png)
 
 ## SSH workflow
 
@@ -102,7 +102,7 @@ The RDP workflow is the key differentiator from using `gcloud iap tunnel` manual
    - **Create Windows App Bookmark**: Creates a persistent bookmark in Microsoft Remote Desktop with credentials
    - **Copy Address**: Copies `localhost:PORT` for use with any RDP client
 
-![IAP Tunnel Manager opening Windows App with RDP connection on macOS](docs/screenshots/openwindowsapp.png)
+![IAP Tunnel Manager opening Windows App with RDP connection on macOS](screenshots/openwindowsapp.png)
 
 ### Windows password generation
 
@@ -111,7 +111,7 @@ For Windows VMs, the app can:
 - Store passwords securely in macOS Keychain
 - Create Microsoft Remote Desktop bookmarks with credentials pre-filled
 
-![IAP Tunnel Manager showing successful bookmark creation with saved credentials](docs/screenshots/bookmarkwindowsuccess.png)
+![IAP Tunnel Manager showing successful bookmark creation with saved credentials](screenshots/bookmarkwindowsuccess.png)
 
 ### Bookmark creation in Microsoft Remote Desktop
 
@@ -121,7 +121,7 @@ The app integrates with Microsoft Remote Desktop (Windows App) on macOS:
 - Stores passwords in macOS Keychain
 - Enables one-click connection from the Windows App
 
-![Microsoft Remote Desktop showing ready-to-use IAP tunnel bookmark on macOS](docs/screenshots/readytousebookmark%20rdp%20windows.png)
+![Microsoft Remote Desktop showing ready-to-use IAP tunnel bookmark on macOS](screenshots/readytousebookmark%20rdp%20windows.png)
 
 ## Why not just use gcloud iap tunnel?
 
