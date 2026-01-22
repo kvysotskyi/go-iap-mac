@@ -1,6 +1,4 @@
-# IAP Tunnel Manager
-
-Native macOS client for Google Cloud IAP.
+# Native macOS client for Google Cloud IAP.
 IAP Desktop alternative for macOS.
 Connect to GCP VMs over RDP via IAP without Windows.
 
