@@ -7,7 +7,7 @@ macOS users are forced to use CLI (gcloud iap tunnel) or Windows VM.
 
 <img src="build/appicon.png" width="128" align="right">
 
-![IAP Tunnel Manager](doc/screenshots/mainWindow.png)
+![IAP Tunnel Manager](docs/screenshots/mainWindow.png)
 
 ## Access Windows VMs from anywhere
 
@@ -21,7 +21,7 @@ The application automatically manages IAP TCP tunnels for you, finding free loca
 
 ## Connect to Windows VMs with Remote Desktop
 
-<img src="doc/screenshots/openwindowsapp.png" width="600">
+<img src="docs/screenshots/openwindowsapp.png" width="600">
 
 IAP Tunnel Manager makes it easy to establish RDP connections:
 
@@ -32,7 +32,7 @@ IAP Tunnel Manager makes it easy to establish RDP connections:
 
 ## Manage VMs across projects
 
-<img src="doc/screenshots/mainConfig.png" width="600">
+<img src="docs/screenshots/mainConfig.png" width="600">
 
 IAP Tunnel Manager gives you a consolidated view of your VMs:
 
@@ -49,25 +49,25 @@ If you have [Microsoft Windows App](https://apps.apple.com/us/app/windows-app/id
 
 Click the **"..."** menu and select **"Create Windows App Bookmark"**:
 
-<img src="doc/screenshots/createWindowsAppBookmark.png" width="600">
+<img src="docs/screenshots/createWindowsAppBookmark.png" width="600">
 
 ### Configure bookmark options
 
 Choose to generate a new Windows password and store it securely in macOS Keychain:
 
-<img src="doc/screenshots/Bookmarkcreatewindow.png" width="600">
+<img src="docs/screenshots/Bookmarkcreatewindow.png" width="600">
 
 ### Credentials saved
 
 The password is generated, saved to Keychain, and the bookmark is created in Windows App:
 
-<img src="doc/screenshots/bookmarkwindowsuccess.png" width="600">
+<img src="docs/screenshots/bookmarkwindowsuccess.png" width="600">
 
 ### Ready to connect
 
 Your bookmark appears in Windows App, ready to use:
 
-<img src="doc/screenshots/readytousebookmark rdp windows.png" width="400">
+<img src="docs/screenshots/readytousebookmark rdp windows.png" width="400">
 
 ## Get started
 
@@ -84,7 +84,7 @@ Download the latest release from the [Releases](https://github.com/kvysotskyi/go
 >
 > You only need to do this once.
 
-<img src="doc/screenshots/allowinsecurity.png" width="500">
+<img src="docs/screenshots/allowinsecurity.png" width="500">
 
 ### Configure IAP in your project
 
