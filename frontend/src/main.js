@@ -16,7 +16,8 @@ const state = {
         vm: null
     },
     isStartingTunnel: false,
-    currentView: 'new' // 'new', 'details', 'empty'
+    currentView: 'new', // 'new', 'details', 'empty'
+    pendingRestartNotification: false // Flag to show restart notification after password modal closes
 };
 
 // DOM Elements
@@ -96,6 +97,11 @@ const elements = {
     confirmMessage: document.getElementById('confirm-message'),
     confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
     confirmOkBtn: document.getElementById('confirm-ok-btn'),
+    // Info modal
+    infoModal: document.getElementById('info-modal'),
+    infoTitle: document.getElementById('info-title'),
+    infoMessage: document.getElementById('info-message'),
+    infoOkBtn: document.getElementById('info-ok-btn'),
     // Bookmark modal
     bookmarkModal: document.getElementById('bookmark-modal'),
     bookmarkModalClose: document.getElementById('bookmark-modal-close'),
@@ -593,6 +599,17 @@ function hideConfirm(result) {
     }
 }
 
+// Show info modal (for notifications)
+function showInfoModal(title, message) {
+    elements.infoTitle.textContent = title;
+    elements.infoMessage.textContent = message;
+    elements.infoModal.classList.remove('hidden');
+}
+
+function hideInfoModal() {
+    elements.infoModal.classList.add('hidden');
+}
+
 // ==================== Projects & VMs ====================
 
 async function loadProjects(filter = '') {
@@ -895,6 +912,11 @@ async function executeBookmarkCreation() {
                 
                 // Show result modal
                 showPasswordResultModal(result);
+                
+                // Store flag to show restart notification after password modal is closed
+                if (result.bookmarkUpdated) {
+                    state.pendingRestartNotification = true;
+                }
             } else {
                 showToast('Failed to generate password: ' + result.error, 'error');
             }
@@ -936,6 +958,12 @@ async function executeBookmarkCreation() {
                 
                 updateBookmarkStatusDisplay(state.selectedConnection);
                 showToast('Windows App bookmark created', 'success');
+                
+                // Show restart notification
+                showInfoModal(
+                    'Bookmark Created',
+                    'Windows App bookmark has been created. Please restart Windows App for the new bookmark to appear in the list. This is a known limitation when creating bookmarks from the command line.'
+                );
             } else {
                 showToast('Failed to create bookmark: ' + result.error, 'error');
             }
@@ -1017,6 +1045,15 @@ function hidePasswordResultModal() {
     generatedPassword = '';
     elements.resultPassword.textContent = '••••••••••••';
     elements.resultPassword.dataset.password = '';
+    
+    // Show restart notification if bookmark was created
+    if (state.pendingRestartNotification) {
+        state.pendingRestartNotification = false;
+        showInfoModal(
+            'Bookmark Created',
+            'Windows App bookmark has been created. Please restart Windows App for the new bookmark to appear in the list. This is a known limitation when creating bookmarks from the command line.'
+        );
+    }
 }
 
 function togglePasswordVisibility() {
@@ -1281,6 +1318,10 @@ function setupEventListeners() {
     elements.confirmCancelBtn.addEventListener('click', () => hideConfirm(false));
     elements.confirmOkBtn.addEventListener('click', () => hideConfirm(true));
     elements.confirmModal.querySelector('.modal-backdrop').addEventListener('click', () => hideConfirm(false));
+    
+    // Info modal events
+    elements.infoOkBtn.addEventListener('click', hideInfoModal);
+    elements.infoModal.querySelector('.modal-backdrop').addEventListener('click', hideInfoModal);
     
     // Bookmark modal events
     elements.bookmarkModalClose.addEventListener('click', hideBookmarkModal);
