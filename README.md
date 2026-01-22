@@ -1,6 +1,11 @@
 # IAP Tunnel Manager
 
-IAP Tunnel Manager is a macOS desktop application that lets you create IAP (Identity-Aware Proxy) RDP tunnels to your Google Cloud VM instances from anywhere.
+Native macOS client for Google Cloud IAP.
+IAP Desktop alternative for macOS.
+Connect to GCP VMs over RDP via IAP without Windows.
+
+Google provides IAP Desktop only for Windows.
+macOS users are forced to use CLI (gcloud iap tunnel) or Windows VM.
 
 <img src="build/appicon.png" width="128" align="right">
 
@@ -148,6 +153,21 @@ Check that:
 
 - Verify the VM has RDP enabled (Windows) or xrdp installed (Linux)
 - Check that port 3389 is listening on the VM
+
+
+## FAQ
+
+### Is there an official Google IAP Desktop for macOS?
+No. Google provides IAP Desktop only for Windows. macOS users must use CLI or third-party tools.
+
+### How can I use Google Cloud IAP on macOS?
+You can use `gcloud iap tunnel` (CLI) or a native macOS client like go-iap-mac.
+
+### Is this an IAP Desktop alternative for Mac?
+Yes. This project provides a native macOS UI for managing IAP SSH/RDP connections.
+
+### Does this replace gcloud?
+No. It uses gcloud under the hood and simplifies daily usage.
 
 ---
 
