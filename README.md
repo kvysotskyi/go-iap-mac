@@ -28,6 +28,7 @@ IAP Tunnel Manager makes it easy to establish RDP connections:
 * **Auto Port Selection** - Automatically finds free local ports for tunnels
 * **Copy RDP Address** - Quick copy of `localhost:<port>` for any RDP client
 * **Real-time Logs** - View tunnel connection status and diagnostics
+* **One-Click FreeRDP Connection** - Connect instantly with FreeRDP using credentials from Keychain
 * **Open Windows App** - Launch Microsoft Windows App directly with one click
 
 ## Manage VMs across projects
@@ -69,22 +70,48 @@ Your bookmark appears in Windows App, ready to use:
 
 <img src="docs/screenshots/readytousebookmark rdp windows.png" width="400">
 
+## FreeRDP One-Click Connection
+
+IAP Tunnel Manager includes built-in support for FreeRDP, allowing you to connect to Windows VMs with a single click. FreeRDP is an open-source Remote Desktop Protocol client that provides excellent performance and features on macOS.
+
+### Quick Connect with FreeRDP
+
+Once you have a saved connection with credentials stored in macOS Keychain:
+
+1. **Start the tunnel** - Click "Start Tunnel" to establish the IAP connection
+2. **Click "Connect with FreeRDP"** - The app automatically launches FreeRDP with:
+   - Pre-configured connection settings
+   - Credentials retrieved from macOS Keychain
+   - Optimized display settings (dynamic resolution, graphics acceleration)
+   - Clipboard and sound support enabled
+
+### Installing FreeRDP
+
+If FreeRDP is not installed, install it using Homebrew:
+
+```bash
+brew install freerdp
+```
+
+The app automatically detects FreeRDP installation in common locations (`/opt/homebrew/bin/sdl-freerdp`, `/usr/local/bin/sdl-freerdp`, or `/usr/bin/sdl-freerdp`).
+
+### FreeRDP Features
+
+When connecting via FreeRDP, you get:
+
+* **Dynamic Resolution** - Automatically adjusts to your display
+* **Graphics Acceleration** - Hardware-accelerated rendering for smooth performance
+* **Clipboard Integration** - Copy and paste between macOS and Windows
+* **Audio Support** - Redirect audio from Windows VM to your Mac
+* **Secure Credential Storage** - Passwords stored securely in macOS Keychain
+
 ## Get started
 
 ### Installation
 
 Download the latest release from the [Releases](https://github.com/kvysotskyi/go-iap-mac/releases) page.
 
-> **Note:** This app is not signed with an Apple Developer certificate. On first launch, macOS will block it. To allow the app:
->
-> 1. Open **System Settings** → **Privacy & Security**
-> 2. Scroll down to the **Security** section
-> 3. Click **"Open Anyway"** next to the message about IAP Tunnel Manager being blocked
-> 4. Confirm by clicking **"Open"** in the dialog
->
-> You only need to do this once.
-
-<img src="docs/screenshots/allowinsecurity.png" width="500">
+The application is code-signed with an Apple Developer ID certificate and notarized by Apple, ensuring secure installation and execution on macOS. Simply download, open, and start using the app - no manual security approval required.
 
 ### Configure IAP in your project
 
@@ -128,7 +155,10 @@ Ensure your VPC has a firewall rule allowing IAP traffic:
 4. **Select a VM** - Choose the VM you want to connect to
 5. **Save Connection** - Click "Save Connection" to save for quick access
 6. **Start Tunnel** - Click "Start Tunnel" to create the IAP connection
-7. **Connect via RDP** - Click "Open Windows App" or use "Copy Address" for other RDP clients
+7. **Connect via RDP** - Choose your preferred connection method:
+   - **Connect with FreeRDP** - One-click connection using FreeRDP (requires FreeRDP installed)
+   - **Open Windows App** - Launch Microsoft Windows App directly
+   - **Copy Address** - Copy `localhost:<port>` for use with any RDP client
 
 ## Troubleshooting
 
@@ -151,6 +181,15 @@ Check that:
 
 - Verify the VM has RDP enabled (Windows) or xrdp installed (Linux)
 - Check that port 3389 is listening on the VM
+
+### FreeRDP connection fails
+
+If FreeRDP fails to launch:
+
+- **FreeRDP not found**: Install FreeRDP using `brew install freerdp`
+- **Credentials missing**: Ensure you've saved the connection with credentials stored in Keychain
+- **Tunnel not running**: Make sure the tunnel is started before connecting with FreeRDP
+- **Check logs**: View the tunnel logs in the app for detailed error messages from FreeRDP
 
 
 ## FAQ

@@ -26,16 +26,7 @@ For detailed IAP TCP forwarding setup, see the [official Google Cloud documentat
 3. Move `IAP Tunnel Manager.app` to `/Applications`
 4. Launch the application
 
-On first launch, macOS Gatekeeper will block the application because it is not code-signed with an Apple Developer certificate. To allow the app:
-
-1. Open System Settings → Privacy & Security
-2. Scroll to the Security section
-3. Click "Open Anyway" next to the blocked application message
-4. Confirm by clicking "Open" in the dialog
-
-This is a one-time step. The app will launch normally on subsequent runs.
-
-![macOS Gatekeeper security warning for IAP Tunnel Manager on macOS](screenshots/allowinsecurity.png)
+The application is code-signed with an Apple Developer ID certificate and notarized by Apple. This ensures secure installation and execution on macOS without requiring manual security approval.
 
 ## First launch & authentication
 
@@ -97,10 +88,31 @@ The RDP workflow is the key differentiator from using `gcloud iap tunnel` manual
 1. Select a project and Windows VM
 2. Choose RDP as the connection type
 3. Click "Start Tunnel" to create the IAP connection
-4. Use one of these options:
+4. Use one of these connection options:
+   - **Connect with FreeRDP**: One-click connection using FreeRDP with credentials from Keychain (requires FreeRDP installed)
    - **Open Windows App**: Launches Microsoft Remote Desktop with the connection pre-configured
    - **Create Windows App Bookmark**: Creates a persistent bookmark in Microsoft Remote Desktop with credentials
    - **Copy Address**: Copies `localhost:PORT` for use with any RDP client
+
+### FreeRDP One-Click Connection
+
+IAP Tunnel Manager includes built-in support for FreeRDP, providing a seamless one-click connection experience. When you have a saved connection with credentials stored in macOS Keychain, simply click "Connect with FreeRDP" after starting the tunnel.
+
+**Installing FreeRDP:**
+
+```bash
+brew install freerdp
+```
+
+The app automatically detects FreeRDP in common installation locations. Once installed, FreeRDP connections include:
+
+- **Dynamic resolution** - Automatically adjusts to your display size
+- **Graphics acceleration** - Hardware-accelerated rendering
+- **Clipboard integration** - Copy and paste between macOS and Windows
+- **Audio support** - Redirect audio from Windows VM to your Mac
+- **Secure credentials** - Passwords retrieved from macOS Keychain
+
+FreeRDP provides excellent performance and is ideal for daily use when you need quick access to Windows VMs.
 
 ![IAP Tunnel Manager opening Windows App with RDP connection on macOS](screenshots/openwindowsapp.png)
 
@@ -164,7 +176,7 @@ This application has the following limitations:
 - **macOS only**: No Windows or Linux versions available
 - **Requires gcloud**: The Google Cloud CLI must be installed and configured
 - **Not officially supported**: This is a community project, not supported by Google
-- **App not code-signed**: The application is not signed with an Apple Developer certificate, requiring manual Gatekeeper approval on first launch
+- **FreeRDP optional**: FreeRDP must be installed separately for one-click FreeRDP connections (other RDP clients work without it)
 
 ## FAQ
 
@@ -191,6 +203,10 @@ Yes. The app supports both SSH and RDP connections over IAP tunnels on macOS.
 ### How do I connect via gcloud iap tunnel on macOS?
 
 You can use `gcloud compute start-iap-tunnel` directly, or use this application for a GUI-based workflow.
+
+### Can I use FreeRDP with this app?
+
+Yes. IAP Tunnel Manager includes built-in FreeRDP support for one-click connections. Install FreeRDP using `brew install freerdp`, then use the "Connect with FreeRDP" button after starting a tunnel. FreeRDP provides excellent performance with features like dynamic resolution, graphics acceleration, and clipboard integration.
 
 ## Links
 
