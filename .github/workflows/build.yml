@@ -149,15 +149,9 @@ jobs:
           npm i -g create-dmg
 
           create-dmg \
-            --volname "${APP_NAME}" \
-            --window-pos 200 120 \
-            --window-size 800 450 \
-            --icon-size 120 \
-            --icon "${APP_NAME}.app" 200 190 \
-            --app-drop-link 600 190 \
-            --hide-extension "${APP_NAME}.app" \
-            --out "$OUT_DIR" \
-            "$APP_PATH"
+            --dmg-title "${APP_NAME}" \
+            "$APP_PATH" \
+            "$OUT_DIR"
 
           DMG_PATH="$(ls -1 "$OUT_DIR"/*.dmg | head -n 1)"
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
@@ -336,15 +330,9 @@ jobs:
           npm i -g create-dmg
 
           create-dmg \
-            --volname "${APP_NAME}" \
-            --window-pos 200 120 \
-            --window-size 800 450 \
-            --icon-size 120 \
-            --icon "${APP_NAME}.app" 200 190 \
-            --app-drop-link 600 190 \
-            --hide-extension "${APP_NAME}.app" \
-            --out "$OUT_DIR" \
-            "$APP_BUNDLE"
+            --dmg-title "${APP_NAME}" \
+            "$APP_BUNDLE" \
+            "$OUT_DIR"
 
           DMG_PATH="$(ls -1 "$OUT_DIR"/*.dmg | head -n 1)"
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
