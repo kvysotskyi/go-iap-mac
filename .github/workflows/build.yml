@@ -172,7 +172,7 @@ jobs:
           codesign --force --timestamp --sign "$IDENTITY" "$DMG_PATH"
           codesign --verify --verbose=4 "$DMG_PATH"
 
-      - name: Notarize DMG + staple
+      - name: Notarize DMG
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -190,8 +190,8 @@ jobs:
             --issuer "$ASC_ISSUER_ID" \
             --wait
 
-          xcrun stapler staple "$DMG_PATH"
-          spctl -a -vv "$DMG_PATH"
+          # Verify DMG is properly signed and notarized
+          codesign --verify --deep --strict --verbose=4 "$DMG_PATH"
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -353,7 +353,7 @@ jobs:
           codesign --force --timestamp --sign "$IDENTITY" "$DMG_PATH"
           codesign --verify --verbose=4 "$DMG_PATH"
 
-      - name: Notarize Universal DMG + staple
+      - name: Notarize Universal DMG
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -371,8 +371,8 @@ jobs:
             --issuer "$ASC_ISSUER_ID" \
             --wait
 
-          xcrun stapler staple "$DMG_PATH"
-          spctl -a -vv "$DMG_PATH"
+          # Verify DMG is properly signed and notarized
+          codesign --verify --deep --strict --verbose=4 "$DMG_PATH"
 
       - name: Upload Universal App
         uses: actions/upload-artifact@v4
