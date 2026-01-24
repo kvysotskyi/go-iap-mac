@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -9,8 +10,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net"
 	"os"
@@ -165,6 +168,12 @@ type WindowsAppStatus struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// FreeRDPStatus represents the FreeRDP availability status
+type FreeRDPStatus struct {
+	Installed bool   `json:"installed"`
+	Path      string `json:"path,omitempty"`
+}
+
 // BookmarkResult represents the result of a bookmark operation
 type BookmarkResult struct {
 	Success    bool   `json:"success"`
@@ -205,6 +214,11 @@ type windowsPasswordResponse struct {
 	PasswordFound     bool   `json:"passwordFound"`
 	EncryptedPassword string `json:"encryptedPassword"`
 	ErrorMessage      string `json:"errorMessage,omitempty"`
+}
+
+type Size struct {
+	W int
+	H int
 }
 
 // NewApp creates a new App application struct
@@ -1784,6 +1798,161 @@ func (a *App) createOrUpdateBookmarkWithCreds(conn *Favorite, localPort int, use
 
 // ==================== macOS Keychain Integration ====================
 
+// LaunchFreeRDP launches FreeRDP with the connection details
+func (a *App) LaunchFreeRDP(connectionID string) error {
+	a.configMu.RLock()
+	var conn *Favorite
+	for i := range a.config.Favorites {
+		if a.config.Favorites[i].ID == connectionID {
+			conn = &a.config.Favorites[i]
+			break
+		}
+	}
+	a.configMu.RUnlock()
+	if conn == nil {
+		return fmt.Errorf("connection not found")
+	}
+
+	localPort := a.getRunningTunnelPort(conn.ProjectID, conn.InstanceName, conn.Zone)
+	if localPort == 0 {
+		return fmt.Errorf("tunnel is not running for this connection")
+	}
+
+	password, _ := a.GetPasswordFromKeychain(conn.ProjectID, conn.Zone, conn.InstanceName, conn.Username)
+	password = strings.TrimRight(password, "\r\n")
+
+	userSpec := conn.Username
+	if !strings.Contains(userSpec, "\\") && !strings.Contains(userSpec, "@") {
+		userSpec = ".\\" + userSpec
+	}
+
+	freerdpPath, err := exec.LookPath("sdl-freerdp")
+	if err != nil {
+		for _, p := range []string{
+			"/opt/homebrew/bin/sdl-freerdp",
+			"/usr/local/bin/sdl-freerdp",
+			"/usr/bin/sdl-freerdp",
+		} {
+			if _, statErr := os.Stat(p); statErr == nil {
+				freerdpPath = p
+				break
+			}
+		}
+	}
+	if freerdpPath == "" {
+		return fmt.Errorf("FreeRDP (sdl-freerdp) not found. Please install it (e.g., 'brew install freerdp' on macOS).")
+	}
+
+	a.tunnelsMu.RLock()
+	var targetTunnel *Tunnel
+	for _, t := range a.tunnels {
+		if t.ProjectID == conn.ProjectID && t.VMName == conn.InstanceName && t.Zone == conn.Zone && t.Status == "running" {
+			targetTunnel = t
+			break
+		}
+	}
+	a.tunnelsMu.RUnlock()
+	screenW := 2560
+	screenH := 1440
+	scale := 0.85
+	sz, err := ScaleWH(screenW, screenH, scale)
+	if err != nil {
+		return fmt.Errorf("failed to scale window size: %v", err)
+	}
+
+	args := []string{
+		fmt.Sprintf("/v:127.0.0.1:%d", localPort),
+		fmt.Sprintf("/u:%s", userSpec),
+		fmt.Sprintf("/p:%s", password),
+		fmt.Sprintf("/title:IAP: %s ->%s:%s", conn.ProjectID, conn.InstanceName, userSpec),
+		"/dynamic-resolution",
+		"/clipboard",
+		"/sound",
+		"/gfx",
+		fmt.Sprintf("/w:%d", sz.W),
+		fmt.Sprintf("/h:%d", sz.H),
+		"/network:auto",
+		"/cert:ignore",
+	}
+
+	cmd := exec.Command(freerdpPath, args...)
+	cmd.Env = os.Environ()
+
+	var stdout io.ReadCloser
+	var stderr io.ReadCloser
+	if targetTunnel != nil {
+		stdout, _ = cmd.StdoutPipe()
+		stderr, _ = cmd.StderrPipe()
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	if targetTunnel != nil {
+		logPipe := func(prefix string, r io.Reader) {
+			s := bufio.NewScanner(r)
+			buf := make([]byte, 0, 64*1024)
+			s.Buffer(buf, 1024*1024)
+			for s.Scan() {
+				targetTunnel.addLog(prefix + s.Text())
+			}
+			if scanErr := s.Err(); scanErr != nil {
+				targetTunnel.addLog(prefix + "scan error: " + scanErr.Error())
+			}
+		}
+		if stdout != nil {
+			go logPipe("[FreeRDP] ", stdout)
+		}
+		if stderr != nil {
+			go logPipe("[FreeRDP-ERR] ", stderr)
+		}
+		targetTunnel.addLog(fmt.Sprintf("[FreeRDP] password len=%d", len(password)))
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("FreeRDP exited immediately: %v (check logs for details)", err)
+		}
+		return nil
+	case <-time.After(800 * time.Millisecond):
+		return nil
+	}
+}
+
+// CheckFreeRDP checks if FreeRDP (sdl-freerdp) is installed
+func (a *App) CheckFreeRDP() FreeRDPStatus {
+	freerdpPath, err := exec.LookPath("sdl-freerdp")
+	if err != nil {
+		commonPaths := []string{
+			"/usr/local/bin/sdl-freerdp",
+			"/opt/homebrew/bin/sdl-freerdp",
+			"/usr/bin/sdl-freerdp",
+		}
+		for _, p := range commonPaths {
+			if _, err := os.Stat(p); err == nil {
+				freerdpPath = p
+				break
+			}
+		}
+	}
+
+	if freerdpPath != "" {
+		return FreeRDPStatus{
+			Installed: true,
+			Path:      freerdpPath,
+		}
+	}
+
+	return FreeRDPStatus{
+		Installed: false,
+	}
+}
+
 // saveToKeychain saves a password to the macOS Keychain
 func (a *App) saveToKeychain(service, account, password string) error {
 	// First try to delete any existing entry
@@ -1887,4 +2056,22 @@ func (a *App) saveConfigLocked() error {
 	}
 
 	return os.WriteFile(a.configPath, data, 0644)
+}
+
+func ScaleWH(screenW, screenH int, scale float64) (Size, error) {
+	if screenW <= 0 || screenH <= 0 {
+		return Size{}, errors.New("screen size must be > 0")
+	}
+	if scale <= 0 || scale > 1.0 {
+		return Size{}, errors.New("scale must be in (0, 1]")
+	}
+	w := int(math.Round(float64(screenW) * scale))
+	h := int(math.Round(float64(screenH) * scale))
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return Size{W: w, H: h}, nil
 }
