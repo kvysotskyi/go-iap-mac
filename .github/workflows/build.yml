@@ -403,9 +403,30 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f
 
+      - name: Rename DMG files to remove spaces
+        run: |
+          find artifacts -name "*.dmg" -type f | while read file; do
+            dir=$(dirname "$file")
+            filename=$(basename "$file")
+            # Replace spaces with hyphens and ensure consistent naming
+            newname=$(echo "$filename" | tr ' ' '-' | sed 's/--*/-/g')
+            if [ "$filename" != "$newname" ]; then
+              mv "$file" "$dir/$newname"
+              echo "Renamed: $filename -> $newname"
+            fi
+          done
+          echo "Final DMG files:"
+          find artifacts -name "*.dmg" -type f
+
+      - name: Extract tag name
+        id: tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.tag.outputs.TAG_NAME }}
+          name: Release ${{ steps.tag.outputs.TAG_NAME }}
           files: |
             artifacts/**/*.dmg
           draft: true
