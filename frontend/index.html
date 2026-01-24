@@ -34,9 +34,27 @@
             </div>
 
             <!-- Windows App Warning -->
-            <div id="windows-app-status" class="warning-banner hidden">
-                <span class="warning-icon">ℹ️</span>
-                <span class="warning-message">Windows App not found. Install it from the Mac App Store to enable RDP bookmark integration.</span>
+            <div id="windows-app-status" class="info-banner windows-app-toast hidden">
+                <div class="banner-content">
+                    <span class="info-icon">ℹ️</span>
+                    <div class="banner-text">
+                        <span class="info-message">Windows App not found. Install it from the Mac App Store to enable RDP bookmark integration.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FreeRDP Notice -->
+            <div id="freerdp-status" class="info-banner freerdp-toast hidden">
+                <div class="banner-content">
+                    <span class="info-icon">💡</span>
+                    <div class="banner-text">
+                        <span class="info-message">FreeRDP can be integrated for one-click connections.</span>
+                        <div class="install-command">
+                            <code>brew install freerdp</code>
+                            <button class="btn-copy-inline" data-copy-text="brew install freerdp" title="Copy command">📋</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -134,6 +152,9 @@
                                 <button id="start-tunnel-btn" class="btn btn-primary" disabled>
                                     Start Tunnel
                                 </button>
+                                <button id="connect-freerdp-btn" class="btn btn-primary" disabled>
+                                    Connect (FreeRDP)
+                                </button>
                                 <button id="stop-tunnel-btn" class="btn btn-danger" disabled>
                                     Stop Tunnel
                                 </button>
@@ -146,7 +167,10 @@
                             <div class="logs-section">
                                 <div class="logs-header">
                                     <h3>Logs</h3>
-                                    <button id="clear-logs-btn" class="btn btn-small">Clear</button>
+                                    <div class="logs-actions">
+                                        <button id="copy-logs-btn" class="btn btn-small">Copy</button>
+                                        <button id="clear-logs-btn" class="btn btn-small">Clear</button>
+                                    </div>
                                 </div>
                                 <div id="logs-container" class="logs-container">
                                     <div class="log-placeholder">No logs yet...</div>
@@ -404,6 +428,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
 
     <script type="module" src="/src/main.js"></script>
 </body>

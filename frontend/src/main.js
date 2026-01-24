@@ -9,6 +9,7 @@ const state = {
     projects: [],
     vms: [],
     windowsAppInstalled: false,
+    freeRDPInstalled: false,
     // New connection form state
     newConnection: {
         name: '',
@@ -33,6 +34,7 @@ const elements = {
     // Windows App
     windowsAppBanner: document.getElementById('windows-app-status'),
     windowsAppMessage: document.querySelector('.warning-message'),
+    freerdpBanner: document.getElementById('freerdp-status'),
     // Top bar
     connectionStatus: document.getElementById('connection-status'),
     openWindowsAppBtn: document.getElementById('open-windows-app-btn'),
@@ -56,8 +58,10 @@ const elements = {
     detailZone: document.getElementById('detail-zone'),
     detailAddress: document.getElementById('detail-address'),
     startTunnelBtn: document.getElementById('start-tunnel-btn'),
+    connectFreeRDPBtn: document.getElementById('connect-freerdp-btn'),
     stopTunnelBtn: document.getElementById('stop-tunnel-btn'),
     copyAddressBtn: document.getElementById('copy-address-btn'),
+    copyLogsBtn: document.getElementById('copy-logs-btn'),
     clearLogsBtn: document.getElementById('clear-logs-btn'),
     // Panel footer buttons
     stopAllBtn: document.getElementById('stop-all-btn'),
@@ -121,6 +125,7 @@ let confirmResolve = null;
 async function init() {
     await checkAuth();
     await checkWindowsApp();
+    await checkFreeRDP();
     await loadConnections();
     await loadProjects();
     await loadTunnels();
@@ -285,6 +290,24 @@ async function openWindowsApp() {
     } catch (error) {
         showToast('Failed to open Windows App: ' + error.message, 'error');
     }
+}
+
+// ==================== FreeRDP ====================
+
+async function checkFreeRDP() {
+    try {
+        const result = await window.go.main.App.CheckFreeRDP();
+        state.freeRDPInstalled = result.installed;
+        
+        if (!result.installed) {
+            elements.freerdpBanner.classList.remove('hidden');
+        } else {
+            elements.freerdpBanner.classList.add('hidden');
+        }
+    } catch (error) {
+        state.freeRDPInstalled = false;
+    }
+    updateButtons();
 }
 
 // ==================== Connections (Saved) ====================
@@ -769,6 +792,58 @@ async function startTunnel() {
     }
 }
 
+async function connectWithFreeRDP() {
+    if (!state.selectedConnection || state.isStartingTunnel) return;
+
+    const activeTunnel = getActiveConnectionTunnel(state.selectedConnection);
+    
+    // If tunnel is already running, just launch FreeRDP
+    if (activeTunnel && activeTunnel.status === 'running') {
+        try {
+            await window.go.main.App.LaunchFreeRDP(state.selectedConnection.id);
+            showToast('Launching FreeRDP...', 'info');
+        } catch (error) {
+            showToast('Failed to launch FreeRDP: ' + error.message, 'error');
+            // If FreeRDP fails to start, we should stop the tunnel as well
+            await stopTunnel();
+        }
+        return;
+    }
+
+    // Otherwise start tunnel first, then launch
+    state.isStartingTunnel = true;
+    elements.connectFreeRDPBtn.disabled = true;
+    elements.connectFreeRDPBtn.textContent = 'Connecting...';
+
+    try {
+        const tunnel = await window.go.main.App.StartTunnelForConnection(state.selectedConnection.id);
+        state.tunnels.unshift(tunnel);
+        state.selectedTunnel = tunnel;
+        updateConnectionStatus();
+        renderConnectionsList();
+        showToast(`Tunnel started on port ${tunnel.localPort}`, 'success');
+
+        // Wait a moment for tunnel to be ready
+        setTimeout(async () => {
+            try {
+                await window.go.main.App.LaunchFreeRDP(state.selectedConnection.id);
+                showToast('Launching FreeRDP...', 'info');
+            } catch (rdpError) {
+                showToast('Failed to launch FreeRDP: ' + rdpError.message, 'error');
+                // CLOSE TUNNEL if FreeRDP fails
+                await stopTunnel();
+            }
+        }, 500);
+    } catch (error) {
+        const errorMsg = error?.message || String(error) || 'Unknown error';
+        showToast('Failed to start tunnel: ' + errorMsg, 'error');
+    } finally {
+        state.isStartingTunnel = false;
+        elements.connectFreeRDPBtn.textContent = 'Connect (FreeRDP)';
+        updateButtons();
+    }
+}
+
 async function stopTunnel() {
     if (!state.selectedConnection) return;
     
@@ -829,6 +904,22 @@ function copyAddress() {
         showToast(`Copied: ${address}`, 'success');
     }).catch(() => {
         showToast('Failed to copy address', 'error');
+    });
+}
+
+function copyLogs() {
+    const container = elements.logsContainer;
+    const entries = container.querySelectorAll('.log-entry');
+    if (entries.length === 0) {
+        showToast('No logs to copy', 'info');
+        return;
+    }
+
+    const text = Array.from(entries).map(el => el.textContent).join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Logs copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy logs', 'error');
     });
 }
 
@@ -1168,6 +1259,7 @@ function showView(view) {
 function updateButtons() {
     // Open Windows App button
     elements.openWindowsAppBtn.disabled = !state.windowsAppInstalled;
+    elements.openWindowsAppBtn.classList.toggle('hidden', !state.windowsAppInstalled);
     elements.openWindowsAppBtn.title = state.windowsAppInstalled ? 'Open Windows App' : 'Windows App not installed';
     
     // Global tunnel buttons
@@ -1178,13 +1270,17 @@ function updateButtons() {
     if (state.selectedConnection) {
         const activeTunnel = getActiveConnectionTunnel(state.selectedConnection);
         const hasActive = activeTunnel != null;
+        const isRunning = activeTunnel && activeTunnel.status === 'running';
         
         elements.startTunnelBtn.disabled = state.isStartingTunnel || hasActive;
+        elements.connectFreeRDPBtn.disabled = !state.freeRDPInstalled || state.isStartingTunnel || (hasActive && !isRunning);
+        elements.connectFreeRDPBtn.classList.toggle('hidden', !state.freeRDPInstalled);
         elements.stopTunnelBtn.disabled = !hasActive;
         elements.copyAddressBtn.disabled = false; // Always enabled - port is fixed
         
         // Menu items
         elements.menuCreateBookmark.disabled = !state.windowsAppInstalled;
+        elements.menuCreateBookmark.classList.toggle('hidden', !state.windowsAppInstalled);
     }
     
     // New connection form
@@ -1258,8 +1354,10 @@ function setupEventListeners() {
     elements.menuGeneratePassword.addEventListener('click', generateWindowsPassword);
     elements.menuDeleteConnection.addEventListener('click', deleteConnection);
     elements.startTunnelBtn.addEventListener('click', startTunnel);
+    elements.connectFreeRDPBtn.addEventListener('click', connectWithFreeRDP);
     elements.stopTunnelBtn.addEventListener('click', stopTunnel);
     elements.copyAddressBtn.addEventListener('click', copyAddress);
+    elements.copyLogsBtn.addEventListener('click', copyLogs);
     elements.clearLogsBtn.addEventListener('click', () => {
         elements.logsContainer.innerHTML = '<div class="log-placeholder">Logs cleared...</div>';
     });
@@ -1335,16 +1433,38 @@ function setupEventListeners() {
             elements.bookmarkPasswordOptions.classList.add('hidden');
         }
     });
+
+    // Inline copy buttons (for FreeRDP banner)
+    document.querySelectorAll('.btn-copy-inline').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const text = btn.dataset.copyText;
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast('Command copied!', 'success');
+                });
+            }
+        });
+    });
 }
 
 // ==================== Utilities ====================
 
 function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(20px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 function escapeHtml(text) {
