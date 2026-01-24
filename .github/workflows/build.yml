@@ -403,24 +403,44 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f
 
-      - name: Rename DMG files to remove spaces
-        run: |
-          find artifacts -name "*.dmg" -type f | while read file; do
-            dir=$(dirname "$file")
-            filename=$(basename "$file")
-            # Replace spaces with hyphens and ensure consistent naming
-            newname=$(echo "$filename" | tr ' ' '-' | sed 's/--*/-/g')
-            if [ "$filename" != "$newname" ]; then
-              mv "$file" "$dir/$newname"
-              echo "Renamed: $filename -> $newname"
-            fi
-          done
-          echo "Final DMG files:"
-          find artifacts -name "*.dmg" -type f
-
       - name: Extract tag name
         id: tag
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Rename DMG files uniquely
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.TAG_NAME }}"
+          find artifacts -name "*.dmg" -type f | while read -r file; do
+            dir=$(dirname "$file")
+            base=$(basename "$file")
+            # Replace spaces with hyphens
+            base=$(echo "$base" | tr ' ' '-' | sed 's/--*/-/g')
+            
+            # Extract architecture from parent folder name (arm64/amd64/universal)
+            parent=$(basename "$dir")
+            # Extract architecture from parent folder name
+            if [[ "$parent" == *"arm64"* ]]; then
+              arch="arm64"
+            elif [[ "$parent" == *"amd64"* ]]; then
+              arch="amd64"
+            elif [[ "$parent" == *"universal"* ]]; then
+              arch="universal"
+            else
+              arch="unknown"
+            fi
+            
+            # Create unique filename: TAG-arch-originalname.dmg
+            new="${TAG}-macOS-${arch}.dmg"
+            
+            if [ "$base" != "$new" ]; then
+              mv "$file" "$dir/$new"
+              echo "Renamed: $base -> $new"
+            fi
+          done
+          
+          echo "Final DMG files:"
+          find artifacts -name "*.dmg" -type f
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -431,3 +451,4 @@ jobs:
             artifacts/**/*.dmg
           draft: true
           generate_release_notes: true
+          token: ${{ github.token }}
