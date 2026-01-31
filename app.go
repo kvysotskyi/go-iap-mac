@@ -376,6 +376,14 @@ func (a *App) stopTunnelInternal(tunnel *Tunnel) {
 	tunnel.Status = "stopped"
 }
 
+// GetVersion returns the application version
+func (a *App) GetVersion() string {
+	if Version == "" {
+		return "dev"
+	}
+	return Version
+}
+
 // GetLastConnection returns the last used connection settings
 func (a *App) GetLastConnection() *LastConnection {
 	a.configMu.RLock()

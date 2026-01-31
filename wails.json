@@ -9,5 +9,10 @@
   "author": {
     "name": "Kostiantyn Vysotskyi",
     "email": "kvysotskyi@gmail.com"
+  },
+  "info": {
+    "productVersion": "0.0.0",
+    "productName": "IAP Tunnel Manager",
+    "copyright": "Copyright © 2026 Kostiantyn Vysotskyi"
   }
 }

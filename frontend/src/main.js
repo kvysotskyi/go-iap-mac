@@ -87,6 +87,8 @@ const elements = {
     passwordCancelBtn: document.getElementById('password-cancel-btn'),
     passwordGenerateBtn: document.getElementById('password-generate-btn'),
     passwordResultModal: document.getElementById('password-result-modal'),
+    // Footer
+    appVersion: document.getElementById('app-version'),
     resultUsername: document.getElementById('result-username'),
     resultPassword: document.getElementById('result-password'),
     resultKeychain: document.getElementById('result-keychain'),
@@ -131,6 +133,16 @@ async function init() {
     await loadTunnels();
     setupEventListeners();
     startStatusPolling();
+    
+    // Load and display version in footer
+    try {
+        const version = await window.go.main.App.GetVersion();
+        if (elements.appVersion) {
+            elements.appVersion.textContent = `Version ${version}`;
+        }
+    } catch (error) {
+        console.error('Failed to get version:', error);
+    }
     
     // Show appropriate view
     if (state.connections.length === 0) {

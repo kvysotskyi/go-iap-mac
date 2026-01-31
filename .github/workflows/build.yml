@@ -47,6 +47,47 @@ jobs:
         run: npm install
         working-directory: frontend
 
+      - name: Set version and update wails.json
+        id: version
+        run: |
+          set -euo pipefail
+          
+          # Extract version from tag or generate dev version
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            
+            # Validate semantic versioning format (vMAJOR.MINOR.PATCH)
+            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Invalid version format: $VERSION"
+              echo "Expected format: vMAJOR.MINOR.PATCH (e.g., v1.2.3)"
+              exit 1
+            fi
+            
+            echo "Building version: $VERSION"
+          else
+            # Dev version: dev+YYYYMMDD-HHMMSS
+            DATETIME=$(date +"%Y%m%d-%H%M%S")
+            VERSION="dev+${DATETIME}"
+            echo "Building dev version: $VERSION"
+          fi
+          
+          # Export for use in build step
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # Save version to file for universal job
+          echo "$VERSION" > build_version.txt
+          
+          # Update wails.json with the version
+          if command -v jq &> /dev/null; then
+            jq ".info.productVersion = \"$VERSION\"" wails.json > wails.json.tmp && mv wails.json.tmp wails.json
+          else
+            # Fallback: use sed
+            sed -i.bak "s/\"productVersion\": \"[^\"]*\"/\"productVersion\": \"$VERSION\"/" wails.json && rm wails.json.bak
+          fi
+          
+          echo "Updated wails.json with version: $VERSION"
+          cat wails.json | grep -A 3 '"info"' || true
+
       - name: Import Developer ID certificate
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
@@ -86,7 +127,8 @@ jobs:
           CGO_ENABLED: 1
         run: |
           set -euo pipefail
-          wails build -platform darwin/${{ matrix.platform.arch }}
+          wails build -platform darwin/${{ matrix.platform.arch }} \
+            -ldflags "-X main.Version=${{ env.VERSION }}"
 
       - name: Sign app (Developer ID)
         run: |
@@ -207,10 +249,55 @@ jobs:
           path: ${{ env.DMG_PATH }}
           retention-days: 30
 
+      - name: Upload version file
+        if: matrix.platform.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-version
+          path: build_version.txt
+          retention-days: 1
+
   universal:
     needs: build
     runs-on: macos-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download version file
+        uses: actions/download-artifact@v4
+        with:
+          name: build-version
+          path: .
+
+      - name: Load version and update wails.json
+        run: |
+          set -euo pipefail
+          
+          # Load version from build job
+          if [[ -f "build_version.txt" ]]; then
+            VERSION=$(cat build_version.txt)
+          else
+            # Fallback: extract from tag or generate dev
+            if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+              VERSION="${GITHUB_REF#refs/tags/}"
+            else
+              DATETIME=$(date +"%Y%m%d-%H%M%S")
+              VERSION="dev+${DATETIME}"
+            fi
+          fi
+          
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # Update wails.json
+          if command -v jq &> /dev/null; then
+            jq ".info.productVersion = \"$VERSION\"" wails.json > wails.json.tmp && mv wails.json.tmp wails.json
+          else
+            sed -i.bak "s/\"productVersion\": \"[^\"]*\"/\"productVersion\": \"$VERSION\"/" wails.json && rm wails.json.bak
+          fi
+          
+          echo "Using version: $VERSION"
+
       - name: Download ARM64 app
         uses: actions/download-artifact@v4
         with:

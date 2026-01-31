@@ -9,6 +9,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
+// Version is set at build time via ldflags
+// Example: go build -ldflags "-X main.Version=v1.2.3"
+var Version = "dev" // default fallback
+
 //go:embed all:frontend
 var assets embed.FS
 
