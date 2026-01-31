@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +47,18 @@ const (
 	ConfigFileName = "config.json"
 	// KeychainService is the service name for Keychain storage
 	KeychainService = "IAP Tunnel Manager"
+	// GitHub releases for update checks
+	ReleasesOwner = "kvysotskyi"
+	ReleasesRepo  = "go-iap"
+	ReleasesAPI   = "https://api.github.com/repos/" + ReleasesOwner + "/" + ReleasesRepo + "/releases/latest"
 )
+
+// UpdateInfo is returned when a newer release is available
+type UpdateInfo struct {
+	LatestVersion string `json:"latestVersion"` // e.g. "v1.2.3"
+	DownloadURL   string `json:"downloadURL"`   // URL to the universal DMG
+	ReleaseURL    string `json:"releaseURL"`    // e.g. "https://github.com/.../releases/tag/v1.2.3"
+}
 
 // App struct
 type App struct {
@@ -382,6 +394,156 @@ func (a *App) GetVersion() string {
 		return "dev"
 	}
 	return Version
+}
+
+// ghRelease and ghAsset match the GitHub API response for GET /repos/:owner/:repo/releases/latest
+type ghRelease struct {
+	TagName string    `json:"tag_name"`
+	Assets []ghAsset `json:"assets"`
+}
+type ghAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// parseVersion returns major, minor, patch and ok. Handles "v1.2.3" or "1.2.3".
+func parseVersion(s string) (major, minor, patch int, ok bool) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
+		return 0, 0, 0, false
+	}
+	var mj, mn, pt int
+	for _, p := range []struct{ ptr *int; str string }{
+		{&mj, parts[0]}, {&mn, parts[1]}, {&pt, parts[2]},
+	} {
+		if _, err := fmt.Sscanf(p.str, "%d", p.ptr); err != nil {
+			return 0, 0, 0, false
+		}
+	}
+	return mj, mn, pt, true
+}
+
+// versionLess returns true if a < b (e.g. "v1.2.3" < "v1.2.4").
+func versionLess(a, b string) bool {
+	ma, na, pa, okA := parseVersion(a)
+	mb, nb, pb, okB := parseVersion(b)
+	if !okA || !okB {
+		return false
+	}
+	if ma != mb {
+		return ma < mb
+	}
+	if na != nb {
+		return na < nb
+	}
+	return pa < pb
+}
+
+// CheckForUpdate fetches the latest release from GitHub and returns UpdateInfo if a newer version exists.
+// Returns (nil, nil) when no update is available. Dev builds (Version "dev" or "dev+...") are not prompted.
+func (a *App) CheckForUpdate() (*UpdateInfo, error) {
+	current := Version
+	if current == "" {
+		current = "dev"
+	}
+	if current == "dev" || strings.HasPrefix(current, "dev+") {
+		return nil, nil
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, ReleasesAPI, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("releases API returned %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var rel ghRelease
+	if err := json.Unmarshal(body, &rel); err != nil {
+		return nil, err
+	}
+	tagName := strings.TrimSpace(rel.TagName)
+	var dmgURL string
+	for _, asset := range rel.Assets {
+		name := asset.Name
+		if strings.Contains(name, "universal") && strings.HasSuffix(strings.ToLower(name), ".dmg") {
+			dmgURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+	if dmgURL == "" {
+		return nil, nil
+	}
+	if !versionLess(current, tagName) {
+		return nil, nil
+	}
+	releaseURL := "https://github.com/" + ReleasesOwner + "/" + ReleasesRepo + "/releases/tag/" + tagName
+	return &UpdateInfo{
+		LatestVersion: tagName,
+		DownloadURL:   dmgURL,
+		ReleaseURL:   releaseURL,
+	}, nil
+}
+
+// DownloadAndOpenUpdate downloads the DMG from downloadURL to the user's Downloads folder and opens it.
+func (a *App) DownloadAndOpenUpdate(downloadURL string) (dmgPath string, err error) {
+	if downloadURL == "" {
+		return "", errors.New("download URL is empty")
+	}
+	client := &http.Client{Timeout: 5 * time.Minute}
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download returned %d", resp.StatusCode)
+	}
+	// Filename from URL path (e.g. .../v1.2.3-macOS-universal.dmg -> v1.2.3-macOS-universal.dmg)
+	baseName := filepath.Base(strings.Split(downloadURL, "?")[0])
+	if baseName == "" || baseName == "." {
+		baseName = "IAP-Tunnel-Manager-update.dmg"
+	}
+	downloadsDir, err := os.UserHomeDir()
+	if err != nil {
+		downloadsDir = os.TempDir()
+	} else {
+		downloadsDir = filepath.Join(downloadsDir, "Downloads")
+	}
+	_ = os.MkdirAll(downloadsDir, 0755)
+	dstPath := filepath.Join(downloadsDir, baseName)
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return "", err
+	}
+	written, err := io.Copy(out, resp.Body)
+	_ = out.Close()
+	if err != nil {
+		_ = os.Remove(dstPath)
+		return "", err
+	}
+	if resp.ContentLength > 0 && written != resp.ContentLength {
+		_ = os.Remove(dstPath)
+		return "", fmt.Errorf("incomplete download: %d != %d", written, resp.ContentLength)
+	}
+	if err := exec.CommandContext(a.ctx, "open", dstPath).Run(); err != nil {
+		return dstPath, fmt.Errorf("opened file but open command failed: %w", err)
+	}
+	return dstPath, nil
 }
 
 // GetLastConnection returns the last used connection settings

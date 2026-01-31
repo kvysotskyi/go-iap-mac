@@ -1453,4 +1453,9 @@ html, body {
 #app-version {
     font-family: 'SF Mono', monospace;
     color: var(--text-muted);
+    cursor: pointer;
+}
+#app-version:hover {
+    text-decoration: underline;
+    color: var(--text-primary);
 }

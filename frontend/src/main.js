@@ -139,6 +139,8 @@ async function init() {
         const version = await window.go.main.App.GetVersion();
         if (elements.appVersion) {
             elements.appVersion.textContent = `Version ${version}`;
+            elements.appVersion.title = 'Check for updates';
+            elements.appVersion.addEventListener('click', checkForUpdates);
         }
     } catch (error) {
         console.error('Failed to get version:', error);
@@ -643,6 +645,31 @@ function showInfoModal(title, message) {
 
 function hideInfoModal() {
     elements.infoModal.classList.add('hidden');
+}
+
+async function checkForUpdates() {
+    if (!elements.appVersion) return;
+    const currentVersion = (elements.appVersion.textContent || '').replace(/^Version\s+/, '') || 'dev';
+    try {
+        const info = await window.go.main.App.CheckForUpdate();
+        if (!info || !info.latestVersion) {
+            showInfoModal('Check for updates', "You're on the latest version.");
+            return;
+        }
+        const confirmed = await showConfirm(
+            'Update available',
+            `Version ${info.latestVersion} is available (you have ${currentVersion}). Download and open the installer?`
+        );
+        if (!confirmed) return;
+        const dmgPath = await window.go.main.App.DownloadAndOpenUpdate(info.downloadURL);
+        showInfoModal(
+            'Update',
+            `Download started. When the DMG opens, quit this app and drag the new version to Applications (replace when asked). Then reopen the app.${dmgPath ? `\n\nFile: ${dmgPath}` : ''}`
+        );
+    } catch (error) {
+        const msg = error?.message || String(error) || 'Unknown error';
+        showInfoModal('Check for updates', `Failed to check or download: ${msg}`);
+    }
 }
 
 // ==================== Projects & VMs ====================
